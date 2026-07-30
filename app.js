@@ -77,7 +77,8 @@ async function cargarVistaResumen() {
     .from('matriz_mensual')
     .select('mes, valor')
     .eq('parametro', 'RECUPERO')
-    .order('mes', { ascending: true });
+    .order('mes', { ascending: true })
+    .limit(5000);
   if (errNac) { console.error(errNac); return; }
 
   // ---- KPIs ----
@@ -163,7 +164,8 @@ async function cargarVistaEstudio(estudioId) {
     .from('matriz_mensual')
     .select('mes, parametro, valor')
     .eq('estudio_id', estudioId)
-    .order('mes', { ascending: true });
+    .order('mes', { ascending: true })
+    .limit(5000);
   if (!filas) return;
 
   const meses = [...new Set(filas.map(f => f.mes))].sort();
