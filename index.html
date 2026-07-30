@@ -121,9 +121,10 @@
     <section id="vista-cargar" class="vista oculto">
       <h2>Cargar datos del mes</h2>
       <p class="ayuda">Subí los 5 archivos de siempre. El sistema aplica las mismas reglas ya validadas (fechas, códigos de abogado, cruces por juzgado) y actualiza la base para todo el equipo.</p>
+      <p class="ayuda"><strong>Cartera pesada (100MB+):</strong> abrila en Excel y hacé <em>Archivo &gt; Guardar como &gt; CSV UTF-8 (delimitado por comas)</em> antes de subirla acá — se procesa mucho más rápido y con menos problemas que el .xlsx original.</p>
 
       <form id="form-carga" class="tarjeta-carga">
-        <label class="campo-archivo">Cartera.xlsx <input type="file" id="archivo-cartera" accept=".xlsx" required></label>
+        <label class="campo-archivo">Cartera.xlsx (o .csv — recomendado para archivos grandes, ver nota abajo) <input type="file" id="archivo-cartera" accept=".xlsx,.csv" required></label>
         <label class="campo-archivo">Recupero.xlsx (todas las hojas) <input type="file" id="archivo-recupero" accept=".xlsx" required></label>
         <label class="campo-archivo">Juzgado.xlsx <input type="file" id="archivo-juzgados" accept=".xlsx" required></label>
         <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx <input type="file" id="archivo-abogados" accept=".xlsx" required></label>
