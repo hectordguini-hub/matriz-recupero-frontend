@@ -116,13 +116,16 @@ async function cargarVistaResumen() {
     COLOR_TINTA);
 
   // ---- Gráfico: torta judicial vs extrajudicial (último mes, todos los estudios) ----
-  const { data: judExtra } = await supabaseClient
-    .from('matriz_mensual')
-    .select('parametro, valor, mes')
-    .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
-    .eq('mes', meses[meses.length - 1]);
-  const totalJud = (judExtra || []).filter(f => f.parametro === 'RECUPERO JUDICIAL').reduce((a, f) => a + Number(f.valor), 0);
-  const totalExtra = (judExtra || []).filter(f => f.parametro === 'RECUPERO EXTRA').reduce((a, f) => a + Number(f.valor), 0);
+  let totalJud = 0, totalExtra = 0;
+  if (meses.length > 0) {
+    const { data: judExtra } = await supabaseClient
+      .from('matriz_mensual')
+      .select('parametro, valor, mes')
+      .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
+      .eq('mes', meses[meses.length - 1]);
+    totalJud = (judExtra || []).filter(f => f.parametro === 'RECUPERO JUDICIAL').reduce((a, f) => a + Number(f.valor), 0);
+    totalExtra = (judExtra || []).filter(f => f.parametro === 'RECUPERO EXTRA').reduce((a, f) => a + Number(f.valor), 0);
+  }
   dibujarTorta('grafico-torta-jud-extra', ['Judicial', 'Extrajudicial'], [totalJud, totalExtra], [COLOR_TINTA, COLOR_BRONCE]);
 
   // ---- Tabla detalle ----
@@ -188,7 +191,7 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
   e.preventDefault();
   const estadoEl = document.getElementById('carga-estado');
   const boton = document.getElementById('btn-cargar');
-  estadoEl.textContent = 'Procesando… esto puede tardar hasta 1 minuto (el servidor gratuito arranca en frío).';
+  estadoEl.textContent = 'Subiendo los archivos… con archivos grandes puede tardar varios minutos, no cierres esta pestaña.';
   estadoEl.className = 'mensaje-estado';
   boton.disabled = true;
 
@@ -209,9 +212,11 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
     const resultado = await respuesta.json();
     if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
 
-    estadoEl.textContent = `Listo: ${resultado.filas_matriz_mensual} filas mensuales y ${resultado.filas_base_gral} filas de resumen actualizadas.`;
+    // La respuesta llega apenas el servidor RECIBE los archivos — el cálculo
+    // pesado sigue corriendo después, en el servidor. Por eso no mostramos
+    // un resultado final acá, sino que avisamos dónde chequear el progreso.
+    estadoEl.textContent = resultado.mensaje || 'Archivos recibidos, procesando en el servidor...';
     estadoEl.className = 'mensaje-estado ok';
-    cargarVistaResumen();
     cargarLogCargas();
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
