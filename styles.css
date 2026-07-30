@@ -38,7 +38,11 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
   padding: 2rem;
   text-align: center;
 }
-.logo-login { width: 96px; height: 96px; object-fit: contain; margin-bottom: 0.5rem; }
+.logo-login {
+  width: 96px; height: 96px; object-fit: contain; margin-bottom: 0.5rem;
+  background: #fff; border-radius: 8px; padding: 10px;
+  box-shadow: var(--sombra);
+}
 .pantalla-login h1 { font-size: 1.6rem; font-weight: 800; margin: 0; letter-spacing: 0.02em; color: var(--tinta); }
 .subtitulo { color: var(--texto-tenue); margin: 0 0 1.5rem; font-size: 0.95rem; }
 
@@ -90,7 +94,10 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
   border-bottom: 3px solid var(--bronce);
 }
 .marca { display: flex; align-items: center; gap: 0.7rem; }
-.marca-logo { width: 34px; height: 34px; object-fit: contain; }
+.marca-logo {
+  width: 34px; height: 34px; object-fit: contain;
+  background: #fff; border-radius: 6px; padding: 4px;
+}
 .marca strong { display: block; font-size: 1.05rem; letter-spacing: 0.01em; }
 .marca-sub { font-size: 0.72rem; color: #b9c7cc; letter-spacing: 0.03em; }
 
