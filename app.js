@@ -1,4 +1,4 @@
-const supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
 const COLOR_TINTA = '#25404a';
 const COLOR_BRONCE = '#ca0130';
@@ -15,7 +15,7 @@ let graficos = {}; // referencias a instancias de Chart.js, para poder destruir/
 // AUTENTICACIÓN
 // ============================================================
 async function iniciarApp() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabaseClient.auth.getSession();
   if (session) {
     mostrarApp(session);
   } else {
@@ -30,7 +30,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   const errorEl = document.getElementById('login-error');
   errorEl.textContent = '';
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
     errorEl.textContent = 'Email o contraseña incorrectos.';
     return;
@@ -39,7 +39,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
 });
 
 document.getElementById('btn-logout').addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await supabaseClient.auth.signOut();
   window.location.reload();
 });
 
@@ -68,12 +68,12 @@ document.getElementById('nav-pestanas').addEventListener('click', (e) => {
 // VISTA: RESUMEN GENERAL
 // ============================================================
 async function cargarVistaResumen() {
-  const { data: base, error: errBase } = await supabase
+  const { data: base, error: errBase } = await supabaseClient
     .from('base_gral')
     .select('parametro, valor, actualizado_en, estudios(nombre)');
   if (errBase) { console.error(errBase); return; }
 
-  const { data: nacional, error: errNac } = await supabase
+  const { data: nacional, error: errNac } = await supabaseClient
     .from('matriz_mensual')
     .select('mes, valor')
     .eq('parametro', 'RECUPERO')
@@ -116,7 +116,7 @@ async function cargarVistaResumen() {
     COLOR_TINTA);
 
   // ---- Gráfico: torta judicial vs extrajudicial (último mes, todos los estudios) ----
-  const { data: judExtra } = await supabase
+  const { data: judExtra } = await supabaseClient
     .from('matriz_mensual')
     .select('parametro, valor, mes')
     .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
@@ -148,7 +148,7 @@ async function cargarVistaResumen() {
 // VISTA: POR ESTUDIO
 // ============================================================
 async function cargarSelectorEstudios() {
-  const { data: estudios } = await supabase.from('estudios').select('id, nombre').order('nombre');
+  const { data: estudios } = await supabaseClient.from('estudios').select('id, nombre').order('nombre');
   const selector = document.getElementById('selector-estudio');
   selector.innerHTML = estudios.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
   selector.addEventListener('change', () => cargarVistaEstudio(selector.value));
@@ -156,7 +156,7 @@ async function cargarSelectorEstudios() {
 }
 
 async function cargarVistaEstudio(estudioId) {
-  const { data: filas } = await supabase
+  const { data: filas } = await supabaseClient
     .from('matriz_mensual')
     .select('mes, parametro, valor')
     .eq('estudio_id', estudioId)
@@ -192,7 +192,7 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
   estadoEl.className = 'mensaje-estado';
   boton.disabled = true;
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabaseClient.auth.getSession();
   const formData = new FormData();
   formData.append('cartera', document.getElementById('archivo-cartera').files[0]);
   formData.append('recupero', document.getElementById('archivo-recupero').files[0]);
@@ -222,7 +222,7 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
 });
 
 async function cargarLogCargas() {
-  const { data: log } = await supabase
+  const { data: log } = await supabaseClient
     .from('cargas_log')
     .select('subido_en, subido_por, estado, mensaje')
     .order('subido_en', { ascending: false })
