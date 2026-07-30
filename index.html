@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GERENCIAR S.R.L. — Matriz de Recupero</title>
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ================= PANTALLA DE LOGIN ================= -->
+<section id="pantalla-login" class="pantalla-login">
+  <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="logo-login">
+  <h1>GERENCIAR S.R.L.</h1>
+  <p class="subtitulo">Gestión de Cobranza — Matriz de Recupero</p>
+
+  <form id="form-login" class="tarjeta-login">
+    <label>
+      Email
+      <input type="email" id="login-email" required autocomplete="username">
+    </label>
+    <label>
+      Contraseña
+      <input type="password" id="login-password" required autocomplete="current-password">
+    </label>
+    <button type="submit">Ingresar</button>
+    <p id="login-error" class="mensaje-error" role="alert"></p>
+  </form>
+</section>
+
+<!-- ================= APP PRINCIPAL (post-login) ================= -->
+<div id="app" class="app oculto">
+
+  <header class="encabezado">
+    <div class="marca">
+      <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="marca-logo">
+      <div>
+        <strong>GERENCIAR S.R.L.</strong>
+        <span class="marca-sub">Matriz de Recupero</span>
+      </div>
+    </div>
+    <nav class="pestanas" id="nav-pestanas">
+      <button class="pestana activa" data-vista="resumen">Resumen General</button>
+      <button class="pestana" data-vista="estudio">Por Estudio</button>
+      <button class="pestana" data-vista="cargar">Cargar Datos</button>
+    </nav>
+    <div class="sesion">
+      <span id="usuario-email"></span>
+      <button id="btn-logout" class="btn-texto">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ---------- VISTA: RESUMEN GENERAL ---------- -->
+    <section id="vista-resumen" class="vista">
+      <div class="fila-encabezado-vista">
+        <h2>Resumen general por estudio</h2>
+        <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
+      </div>
+
+      <div class="tarjetas-kpi" id="kpis-generales"></div>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico ancho-completo">
+          <h3>Recupero mensual — total nacional</h3>
+          <canvas id="grafico-recupero-nacional"></canvas>
+        </div>
+        <div class="tarjeta-grafico">
+          <h3>Recupero del último mes cerrado, por estudio</h3>
+          <canvas id="grafico-barras-estudios"></canvas>
+        </div>
+        <div class="tarjeta-grafico">
+          <h3>Judicial vs. extrajudicial (últ. mes)</h3>
+          <canvas id="grafico-torta-jud-extra"></canvas>
+        </div>
+      </div>
+
+      <div class="tabla-contenedor">
+        <h3>Detalle por estudio</h3>
+        <table id="tabla-base-gral">
+          <thead>
+            <tr>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- VISTA: POR ESTUDIO ---------- -->
+    <section id="vista-estudio" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Detalle por estudio</h2>
+        <select id="selector-estudio"></select>
+      </div>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico ancho-completo">
+          <h3>Recupero mensual — total / judicial / extrajudicial</h3>
+          <canvas id="grafico-estudio-recupero"></canvas>
+        </div>
+        <div class="tarjeta-grafico">
+          <h3>Comparativa por compañía (CFN / Megatone / Confina)</h3>
+          <canvas id="grafico-estudio-companias"></canvas>
+        </div>
+        <div class="tarjeta-grafico">
+          <h3>Sentencias firmes y liquidaciones por mes</h3>
+          <canvas id="grafico-estudio-pasos"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VISTA: CARGAR DATOS ---------- -->
+    <section id="vista-cargar" class="vista oculto">
+      <h2>Cargar datos del mes</h2>
+      <p class="ayuda">Subí los 5 archivos de siempre. El sistema aplica las mismas reglas ya validadas (fechas, códigos de abogado, cruces por juzgado) y actualiza la base para todo el equipo.</p>
+
+      <form id="form-carga" class="tarjeta-carga">
+        <label class="campo-archivo">Cartera.xlsx <input type="file" id="archivo-cartera" accept=".xlsx" required></label>
+        <label class="campo-archivo">Recupero.xlsx (todas las hojas) <input type="file" id="archivo-recupero" accept=".xlsx" required></label>
+        <label class="campo-archivo">Juzgado.xlsx <input type="file" id="archivo-juzgados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx <input type="file" id="archivo-abogados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Pasos Procesales.xlsx <input type="file" id="archivo-pasos" accept=".xlsx" required></label>
+
+        <button type="submit" id="btn-cargar">Procesar y guardar</button>
+        <p id="carga-estado" class="mensaje-estado"></p>
+      </form>
+
+      <div class="tabla-contenedor">
+        <h3>Historial de cargas</h3>
+        <table id="tabla-log">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
