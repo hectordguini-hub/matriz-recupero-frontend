@@ -136,6 +136,8 @@ async function cargarVistaResumen() {
     [{ etiqueta: 'Recupero total', datos: meses.map(m => porMes[m]), color: COLOR_BRONCE }],
     meses.map(m => porMesFichas[m] || 0));
 
+  cargarSeguimiento('nacional', granularidadNacional);
+
   // ---- Gráfico: barras por estudio (últ. mes cerrado) ----
   const filasUltimoMes = base.filter(f => f.parametro === 'RECUPERO ULT.MES CERRADO' && Number(f.valor) > 0)
     .sort((a, b) => b.valor - a.valor);
@@ -216,7 +218,65 @@ async function cargarVistaEstudio(estudioId) {
     { etiqueta2: 'Liquidaciones', datos2: porParametro('CANT. DE LIQUIDACIONES'), color2: COLOR_VERDE });
 
   dibujarBarras('grafico-estudio-embargos', meses, porParametro('NUEVOS EMBARGOS'), COLOR_BRONCE);
+
+  estudioSeleccionadoActual = estudioId;
+  cargarSeguimiento('estudio', granularidadEstudio, estudioId);
 }
+
+// ============================================================
+// SEGUIMIENTO DIARIO/SEMANAL DEL RECUPERO
+// ============================================================
+let granularidadNacional = 'diario';
+let granularidadEstudio = 'diario';
+let estudioSeleccionadoActual = null;
+
+// Agrupa una fecha en la semana a la que pertenece (lunes de esa semana),
+// para el detalle "semanal" — se arma acá mismo, no hace falta guardar nada
+// aparte: el dato diario ya alcanza.
+function claveDeSemana(fechaIso) {
+  const d = new Date(fechaIso + 'T00:00:00');
+  const diaSemana = d.getDay() || 7; // domingo=0 -> tratarlo como 7
+  d.setDate(d.getDate() - diaSemana + 1); // lunes de esa semana
+  return d.toISOString().slice(0, 10);
+}
+
+async function cargarSeguimiento(objetivo, granularidad, estudioId) {
+  const idCanvas = objetivo === 'nacional' ? 'grafico-seguimiento-nacional' : 'grafico-seguimiento-estudio';
+
+  const construirConsulta = () => {
+    let q = supabaseClient.from('recupero_diario').select('fecha, valor').order('fecha', { ascending: true });
+    if (objetivo === 'estudio' && estudioId) q = q.eq('estudio_id', estudioId);
+    return q;
+  };
+  const filas = await consultarPaginado(construirConsulta);
+
+  const agrupado = {};
+  filas.forEach(f => {
+    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+    agrupado[clave] = (agrupado[clave] || 0) + Number(f.valor);
+  });
+  const claves = Object.keys(agrupado).sort();
+  const etiquetaSerie = granularidad === 'semanal' ? 'Recupero (semana del)' : 'Recupero diario';
+  dibujarLinea(idCanvas, claves, [{ etiqueta: etiquetaSerie, datos: claves.map(c => agrupado[c]), color: COLOR_BRONCE }]);
+}
+
+document.querySelectorAll('.selector-granularidad').forEach(selector => {
+  selector.addEventListener('click', (e) => {
+    const boton = e.target.closest('.chip-granularidad');
+    if (!boton) return;
+    selector.querySelectorAll('.chip-granularidad').forEach(b => b.classList.remove('activa'));
+    boton.classList.add('activa');
+    const objetivo = selector.dataset.objetivo;
+    const granularidad = boton.dataset.granularidad;
+    if (objetivo === 'nacional') {
+      granularidadNacional = granularidad;
+      cargarSeguimiento('nacional', granularidadNacional);
+    } else {
+      granularidadEstudio = granularidad;
+      cargarSeguimiento('estudio', granularidadEstudio, estudioSeleccionadoActual);
+    }
+  });
+});
 
 // ============================================================
 // VISTA: CARGAR DATOS
