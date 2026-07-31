@@ -124,6 +124,24 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
 .fila-encabezado-vista { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.1rem; flex-wrap: wrap; gap: 0.5rem; }
 .fila-encabezado-vista h2 { margin: 0; font-size: 1.35rem; }
 .etiqueta-actualizado { color: var(--texto-tenue); font-size: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
+.acciones-encabezado { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+.fila-titulo-selector { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem; }
+.fila-titulo-selector h3 { margin: 0; }
+.selector-granularidad { display: flex; border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; }
+.chip-granularidad {
+  background: #fff; border: none; padding: 0.35rem 0.8rem; font-family: 'Fira Sans', sans-serif;
+  font-size: 0.8rem; cursor: pointer; color: var(--texto-tenue);
+}
+.chip-granularidad + .chip-granularidad { border-left: 1px solid var(--linea); }
+.chip-granularidad.activa { background: var(--tinta); color: #fff; }
+.btn-secundario {
+  background: #fff; color: var(--tinta); border: 1px solid var(--linea);
+  border-radius: var(--radio); padding: 0.5rem 0.9rem; font-family: 'Fira Sans', sans-serif;
+  font-size: 0.85rem; font-weight: 500; cursor: pointer;
+}
+.btn-secundario:hover { border-color: var(--bronce); color: var(--bronce); }
+.btn-secundario:disabled { opacity: 0.6; cursor: default; }
 
 #selector-estudio {
   font-family: 'Fira Sans', sans-serif;
