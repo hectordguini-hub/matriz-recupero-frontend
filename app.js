@@ -276,8 +276,10 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
   formData.append('bajas', document.getElementById('incremental-bajas').files[0]);
   formData.append('recupero_mes', document.getElementById('incremental-recupero').files[0]);
   formData.append('pasos_mes', document.getElementById('incremental-pasos').files[0]);
-  formData.append('juzgados', document.getElementById('incremental-juzgados').files[0]);
-  formData.append('abogados', document.getElementById('incremental-abogados').files[0]);
+  const archivoJuzgados = document.getElementById('incremental-juzgados').files[0];
+  const archivoAbogados = document.getElementById('incremental-abogados').files[0];
+  if (archivoJuzgados) formData.append('juzgados', archivoJuzgados);
+  if (archivoAbogados) formData.append('abogados', archivoAbogados);
 
   try {
     const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-incremental`, {
