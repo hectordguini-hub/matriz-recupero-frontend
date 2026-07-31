@@ -156,7 +156,8 @@
     <!-- ---------- VISTA: CARGA MENSUAL (INCREMENTAL) ---------- -->
     <section id="vista-incremental" class="vista oculto">
       <h2>Carga mensual (altas, bajas y el mes nuevo)</h2>
-      <p class="ayuda">Todos los meses: subí las causas nuevas (altas), las canceladas (bajas), y solo la hoja del mes de Recupero y de Pasos Procesales — no hace falta rearmar el historial completo. Juzgado y Abogados se suben completos igual (cambian poco).</p>
+      <p class="ayuda">Todos los meses: subí las causas nuevas (altas), las canceladas (bajas), y solo la hoja del mes de Recupero y de Pasos Procesales — no hace falta rearmar el historial completo.</p>
+      <p class="ayuda"><strong>Juzgado y Abogados son opcionales</strong>: si no los subís, el sistema usa la última versión guardada. Solo hace falta subirlos de nuevo si cambió algo — por ejemplo, si vas a empezar a operar en una sucursal nueva (el sistema la da de alta sola apenas aparece en el archivo de Abogados).</p>
 
       <form id="form-incremental" class="tarjeta-carga">
         <label class="campo-archivo">Mes que estás cargando
@@ -166,8 +167,8 @@
         <label class="campo-archivo">Bajas del mes (ej. bajasmes.xlsx — causas canceladas) <input type="file" id="incremental-bajas" accept=".xlsx,.csv" required></label>
         <label class="campo-archivo">Recupero del mes (una sola hoja) <input type="file" id="incremental-recupero" accept=".xlsx,.csv" required></label>
         <label class="campo-archivo">Pasos Procesales del mes <input type="file" id="incremental-pasos" accept=".xlsx" required></label>
-        <label class="campo-archivo">Juzgado.xlsx (completo) <input type="file" id="incremental-juzgados" accept=".xlsx" required></label>
-        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx (completo) <input type="file" id="incremental-abogados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Juzgado.xlsx (opcional — solo si cambió algo, o si vas a agregar una sucursal nueva) <input type="file" id="incremental-juzgados" accept=".xlsx"></label>
+        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx (opcional — solo si cambió algo, o si vas a agregar una sucursal nueva) <input type="file" id="incremental-abogados" accept=".xlsx"></label>
 
         <button type="submit" id="btn-incremental">Procesar y guardar</button>
         <p id="incremental-estado" class="mensaje-estado"></p>
