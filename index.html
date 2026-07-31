@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -47,7 +49,8 @@
     <nav class="pestanas" id="nav-pestanas">
       <button class="pestana activa" data-vista="resumen">Resumen General</button>
       <button class="pestana" data-vista="estudio">Por Estudio</button>
-      <button class="pestana" data-vista="cargar">Cargar Datos</button>
+      <button class="pestana" data-vista="cargar">Carga Completa</button>
+      <button class="pestana" data-vista="incremental">Carga Mensual</button>
     </nav>
     <div class="sesion">
       <span id="usuario-email"></span>
@@ -60,7 +63,10 @@
     <section id="vista-resumen" class="vista">
       <div class="fila-encabezado-vista">
         <h2>Resumen general por estudio</h2>
-        <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
+        <div class="acciones-encabezado">
+          <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
+          <button id="btn-exportar-pdf" class="btn-secundario">Descargar informe completo (PDF)</button>
+        </div>
       </div>
 
       <div class="tarjetas-kpi" id="kpis-generales"></div>
@@ -114,13 +120,17 @@
           <h3>Sentencias firmes y liquidaciones por mes</h3>
           <canvas id="grafico-estudio-pasos"></canvas>
         </div>
+        <div class="tarjeta-grafico">
+          <h3>Nuevos embargos por mes</h3>
+          <canvas id="grafico-estudio-embargos"></canvas>
+        </div>
       </div>
     </section>
 
-    <!-- ---------- VISTA: CARGAR DATOS ---------- -->
+    <!-- ---------- VISTA: CARGA COMPLETA ---------- -->
     <section id="vista-cargar" class="vista oculto">
-      <h2>Cargar datos del mes</h2>
-      <p class="ayuda">Subí los 5 archivos de siempre. El sistema aplica las mismas reglas ya validadas (fechas, códigos de abogado, cruces por juzgado) y actualiza la base para todo el equipo.</p>
+      <h2>Carga completa (reprocesa todo desde cero)</h2>
+      <p class="ayuda">Subí los 5 archivos completos de siempre. El sistema aplica las mismas reglas ya validadas (fechas, códigos de abogado, cruces por juzgado) y recalcula todo desde octubre/2023. Usá esto solo si necesitás reprocesar el historial completo — para la carga de todos los meses, usá "Carga Mensual".</p>
       <p class="ayuda"><strong>Cartera pesada (100MB+):</strong> abrila en Excel y hacé <em>Archivo &gt; Guardar como &gt; CSV UTF-8 (delimitado por comas)</em> antes de subirla acá — se procesa mucho más rápido y con menos problemas que el .xlsx original.</p>
 
       <form id="form-carga" class="tarjeta-carga">
@@ -137,6 +147,35 @@
       <div class="tabla-contenedor">
         <h3>Historial de cargas</h3>
         <table id="tabla-log">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- VISTA: CARGA MENSUAL (INCREMENTAL) ---------- -->
+    <section id="vista-incremental" class="vista oculto">
+      <h2>Carga mensual (altas, bajas y el mes nuevo)</h2>
+      <p class="ayuda">Todos los meses: subí las causas nuevas (altas), las canceladas (bajas), y solo la hoja del mes de Recupero y de Pasos Procesales — no hace falta rearmar el historial completo. Juzgado y Abogados se suben completos igual (cambian poco).</p>
+
+      <form id="form-incremental" class="tarjeta-carga">
+        <label class="campo-archivo">Mes que estás cargando
+          <input type="date" id="incremental-mes" required>
+        </label>
+        <label class="campo-archivo">Altas del mes (causas nuevas) <input type="file" id="incremental-altas" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Bajas del mes (ej. bajasmes.xlsx — causas canceladas) <input type="file" id="incremental-bajas" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Recupero del mes (una sola hoja) <input type="file" id="incremental-recupero" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Pasos Procesales del mes <input type="file" id="incremental-pasos" accept=".xlsx" required></label>
+        <label class="campo-archivo">Juzgado.xlsx (completo) <input type="file" id="incremental-juzgados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx (completo) <input type="file" id="incremental-abogados" accept=".xlsx" required></label>
+
+        <button type="submit" id="btn-incremental">Procesar y guardar</button>
+        <p id="incremental-estado" class="mensaje-estado"></p>
+      </form>
+
+      <div class="tabla-contenedor">
+        <h3>Historial de cargas</h3>
+        <table id="tabla-log-incremental">
           <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
           <tbody></tbody>
         </table>
