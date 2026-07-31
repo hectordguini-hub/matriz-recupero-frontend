@@ -76,6 +76,16 @@
           <h3>Recupero mensual — total nacional</h3>
           <canvas id="grafico-recupero-nacional"></canvas>
         </div>
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Seguimiento del recupero — nacional</h3>
+            <div class="selector-granularidad" data-objetivo="nacional">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <canvas id="grafico-seguimiento-nacional"></canvas>
+        </div>
         <div class="tarjeta-grafico">
           <h3>Recupero del último mes cerrado, por estudio</h3>
           <canvas id="grafico-barras-estudios"></canvas>
@@ -111,6 +121,16 @@
         <div class="tarjeta-grafico ancho-completo">
           <h3>Recupero mensual — total / judicial / extrajudicial</h3>
           <canvas id="grafico-estudio-recupero"></canvas>
+        </div>
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Seguimiento del recupero — este estudio</h3>
+            <div class="selector-granularidad" data-objetivo="estudio">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <canvas id="grafico-seguimiento-estudio"></canvas>
         </div>
         <div class="tarjeta-grafico">
           <h3>Comparativa por compañía (CFN / Megatone / Confina)</h3>
