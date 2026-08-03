@@ -63,12 +63,46 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 
 function mostrarApp(session) {
   document.getElementById('pantalla-login').classList.add('oculto');
+
+  // Si el usuario fue creado con la marca "debe cambiar la contraseña" (se
+  // pone al crearlo en Supabase, en el campo de metadata del usuario), no lo
+  // dejamos entrar al dashboard hasta que la cambie.
+  if (session.user.user_metadata && session.user.user_metadata.must_change_password) {
+    document.getElementById('pantalla-cambiar-password').classList.remove('oculto');
+    return;
+  }
+
   document.getElementById('app').classList.remove('oculto');
   document.getElementById('usuario-email').textContent = session.user.email;
   cargarVistaResumen();
   cargarSelectorEstudios();
   cargarLogCargas();
 }
+
+document.getElementById('form-cambiar-password').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('cambiar-password-error');
+  errorEl.textContent = '';
+  const nueva = document.getElementById('nueva-password').value;
+  const confirmar = document.getElementById('nueva-password-confirmar').value;
+
+  if (nueva !== confirmar) {
+    errorEl.textContent = 'Las dos contraseñas no coinciden.';
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.updateUser({
+    password: nueva,
+    data: { must_change_password: false },
+  });
+  if (error) {
+    errorEl.textContent = 'No se pudo guardar la contraseña: ' + error.message;
+    return;
+  }
+
+  document.getElementById('pantalla-cambiar-password').classList.add('oculto');
+  mostrarApp(data.user ? { user: data.user } : (await supabaseClient.auth.getSession()).data.session);
+});
 
 // ============================================================
 // NAVEGACIÓN ENTRE PESTAÑAS
@@ -244,7 +278,9 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   const idCanvas = objetivo === 'nacional' ? 'grafico-seguimiento-nacional' : 'grafico-seguimiento-estudio';
 
   const construirConsulta = () => {
-    let q = supabaseClient.from('recupero_diario').select('fecha, valor').order('fecha', { ascending: true });
+    let q = supabaseClient.from('recupero_diario')
+      .select('fecha, valor_judicial, valor_extrajudicial, cantidad_fichas')
+      .order('fecha', { ascending: true });
     if (objetivo === 'estudio' && estudioId) q = q.eq('estudio_id', estudioId);
     return q;
   };
@@ -253,11 +289,19 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   const agrupado = {};
   filas.forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-    agrupado[clave] = (agrupado[clave] || 0) + Number(f.valor);
+    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichas: 0 };
+    agrupado[clave].judicial += Number(f.valor_judicial || 0);
+    agrupado[clave].extrajudicial += Number(f.valor_extrajudicial || 0);
+    agrupado[clave].fichas += Number(f.cantidad_fichas || 0);
   });
   const claves = Object.keys(agrupado).sort();
-  const etiquetaSerie = granularidad === 'semanal' ? 'Recupero (semana del)' : 'Recupero diario';
-  dibujarLinea(idCanvas, claves, [{ etiqueta: etiquetaSerie, datos: claves.map(c => agrupado[c]), color: COLOR_BRONCE }]);
+  const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  dibujarLineaConFichas(idCanvas, claves,
+    [
+      { etiqueta: 'Judicial' + sufijo, datos: claves.map(c => agrupado[c].judicial), color: COLOR_TINTA },
+      { etiqueta: 'Extrajudicial' + sufijo, datos: claves.map(c => agrupado[c].extrajudicial), color: COLOR_VERDE },
+    ],
+    claves.map(c => agrupado[c].fichas));
 }
 
 document.querySelectorAll('.selector-granularidad').forEach(selector => {
@@ -281,6 +325,40 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
 // ============================================================
 // VISTA: CARGAR DATOS
 // ============================================================
+// Después de subir los archivos, el servidor sigue procesando en segundo
+// plano. En vez de obligar a refrescar la página a mano, consultamos el
+// Historial de Cargas cada 8 segundos hasta ver que terminó (ok o error), y
+// ahí actualizamos el dashboard solos.
+async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExito) {
+  const maxIntentos = 90; // 90 x 8s = 12 minutos como máximo
+  for (let intento = 0; intento < maxIntentos; intento++) {
+    await new Promise(r => setTimeout(r, 8000));
+    const { data } = await supabaseClient
+      .from('cargas_log')
+      .select('subido_en, estado, mensaje')
+      .gt('subido_en', horaInicioIso)
+      .order('subido_en', { ascending: false })
+      .limit(5);
+    const filaFinal = (data || []).find(f => f.estado === 'ok' || f.estado === 'error');
+    if (filaFinal) {
+      if (filaFinal.estado === 'ok') {
+        estadoEl.textContent = mensajeExito || `Listo: ${filaFinal.mensaje}`;
+        estadoEl.className = 'mensaje-estado ok';
+        cargarVistaResumen();
+        cargarSelectorEstudios();
+      } else {
+        estadoEl.textContent = `Error: ${filaFinal.mensaje}`;
+        estadoEl.className = 'mensaje-estado error';
+      }
+      cargarLogCargas();
+      return;
+    }
+  }
+  estadoEl.textContent = 'Sigue procesando hace rato — revisá el Historial de Cargas o los logs de Render.';
+  estadoEl.className = 'mensaje-estado';
+  cargarLogCargas();
+}
+
 document.getElementById('form-carga').addEventListener('submit', async (e) => {
   e.preventDefault();
   const estadoEl = document.getElementById('carga-estado');
@@ -288,6 +366,7 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
   estadoEl.textContent = 'Subiendo los archivos… con archivos grandes puede tardar varios minutos, no cierres esta pestaña.';
   estadoEl.className = 'mensaje-estado';
   boton.disabled = true;
+  const horaInicio = new Date().toISOString();
 
   const { data: { session } } = await supabaseClient.auth.getSession();
   const formData = new FormData();
@@ -306,12 +385,10 @@ document.getElementById('form-carga').addEventListener('submit', async (e) => {
     const resultado = await respuesta.json();
     if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
 
-    // La respuesta llega apenas el servidor RECIBE los archivos — el cálculo
-    // pesado sigue corriendo después, en el servidor. Por eso no mostramos
-    // un resultado final acá, sino que avisamos dónde chequear el progreso.
-    estadoEl.textContent = resultado.mensaje || 'Archivos recibidos, procesando en el servidor...';
+    estadoEl.textContent = 'Archivos recibidos. Procesando en el servidor — esta pantalla se va a actualizar sola cuando termine, no hace falta que la refresques.';
     estadoEl.className = 'mensaje-estado ok';
     cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
     estadoEl.className = 'mensaje-estado error';
@@ -327,6 +404,7 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
   estadoEl.textContent = 'Subiendo… puede tardar unos minutos, no cierres esta pestaña.';
   estadoEl.className = 'mensaje-estado';
   boton.disabled = true;
+  const horaInicio = new Date().toISOString();
 
   const { data: { session } } = await supabaseClient.auth.getSession();
   const mesElegido = document.getElementById('incremental-mes').value; // 'YYYY-MM-DD'
@@ -350,9 +428,10 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
     const resultado = await respuesta.json();
     if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
 
-    estadoEl.textContent = resultado.mensaje || 'Archivos recibidos, procesando en el servidor...';
+    estadoEl.textContent = 'Archivos recibidos. Procesando en el servidor — esta pantalla se va a actualizar sola cuando termine, no hace falta que la refresques.';
     estadoEl.className = 'mensaje-estado ok';
     cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
     estadoEl.className = 'mensaje-estado error';
