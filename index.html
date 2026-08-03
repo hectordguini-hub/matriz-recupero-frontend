@@ -35,6 +35,26 @@
   </form>
 </section>
 
+<!-- ================= CAMBIO DE CONTRASEÑA OBLIGATORIO (primer ingreso) ================= -->
+<section id="pantalla-cambiar-password" class="pantalla-login oculto">
+  <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="logo-login">
+  <h1>Elegí tu contraseña</h1>
+  <p class="subtitulo">Es tu primer ingreso — poné una contraseña nueva para tu cuenta.</p>
+
+  <form id="form-cambiar-password" class="tarjeta-login">
+    <label>
+      Contraseña nueva
+      <input type="password" id="nueva-password" required minlength="6" autocomplete="new-password">
+    </label>
+    <label>
+      Repetir contraseña
+      <input type="password" id="nueva-password-confirmar" required minlength="6" autocomplete="new-password">
+    </label>
+    <button type="submit">Guardar y entrar</button>
+    <p id="cambiar-password-error" class="mensaje-error" role="alert"></p>
+  </form>
+</section>
+
 <!-- ================= APP PRINCIPAL (post-login) ================= -->
 <div id="app" class="app oculto">
 
