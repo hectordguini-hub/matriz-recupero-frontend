@@ -539,7 +539,13 @@ function dibujarLineaConFichas(id, etiquetas, lineas, datosFichas) {
 function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudicial, fichasJudicial, fichasExtrajudicial, sufijo) {
   destruirSiExiste(id);
   const ctx = document.getElementById(id);
+  const valorTotal = etiquetas.map((_, i) => Number(valorJudicial[i] || 0) + Number(valorExtrajudicial[i] || 0));
+  const fichasTotal = etiquetas.map((_, i) => Number(fichasJudicial[i] || 0) + Number(fichasExtrajudicial[i] || 0));
   const datasets = [
+    {
+      type: 'line', label: 'Total' + (sufijo || ''), data: valorTotal, borderColor: COLOR_BRONCE,
+      backgroundColor: COLOR_BRONCE + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y', borderWidth: 2.5,
+    },
     {
       type: 'line', label: 'Judicial' + (sufijo || ''), data: valorJudicial, borderColor: COLOR_JUDICIAL,
       backgroundColor: COLOR_JUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
@@ -547,6 +553,10 @@ function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudi
     {
       type: 'line', label: 'Extrajudicial' + (sufijo || ''), data: valorExtrajudicial, borderColor: COLOR_EXTRAJUDICIAL,
       backgroundColor: COLOR_EXTRAJUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
+    },
+    {
+      type: 'bar', label: 'Fichas total', data: fichasTotal,
+      backgroundColor: COLOR_BRONCE + '33', yAxisID: 'y1', order: 98,
     },
     {
       type: 'bar', label: 'Fichas judicial', data: fichasJudicial,
