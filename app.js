@@ -23,6 +23,8 @@ const COLOR_BRONCE = '#ca0130';
 const COLOR_VERDE = '#3f6b4f';
 const COLOR_ROJO = '#a23b2d';
 const COLOR_LINEA = '#dedad0';
+const COLOR_JUDICIAL = '#25404a';       // navy — bien distinto del extrajudicial
+const COLOR_EXTRAJUDICIAL = '#c9820a';  // ámbar — bien distinto del judicial y del verde
 
 const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const formateadorNumero = new Intl.NumberFormat('es-AR');
@@ -125,10 +127,10 @@ async function cargarVistaResumen() {
     .select('parametro, valor, actualizado_en, estudios(nombre)');
   if (errBase) { console.error(errBase); return; }
 
-  const nacional = await consultarPaginado(() => supabaseClient
+  const nacionalDetalle = await consultarPaginado(() => supabaseClient
     .from('matriz_mensual')
-    .select('mes, valor')
-    .eq('parametro', 'RECUPERO')
+    .select('mes, parametro, valor')
+    .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA', 'CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.'])
     .order('mes', { ascending: true })
   );
   const nacionalFichas = await consultarPaginado(() => supabaseClient
@@ -160,17 +162,22 @@ async function cargarVistaResumen() {
     ? `Actualizado: ${new Date(ultimaActualizacion).toLocaleString('es-AR')}`
     : '';
 
-  // ---- Gráfico: recupero mensual nacional (suma de todos los estudios por mes) ----
-  const porMes = {};
-  nacional.forEach(f => { porMes[f.mes] = (porMes[f.mes] || 0) + Number(f.valor); });
-  const porMesFichas = {};
-  nacionalFichas.forEach(f => { porMesFichas[f.mes] = (porMesFichas[f.mes] || 0) + Number(f.valor); });
-  const meses = Object.keys(porMes).sort();
-  dibujarLineaConFichas('grafico-recupero-nacional', meses,
-    [{ etiqueta: 'Recupero total', datos: meses.map(m => porMes[m]), color: COLOR_BRONCE }],
-    meses.map(m => porMesFichas[m] || 0));
+  // ---- Gráfico: recupero mensual nacional, judicial vs extrajudicial + fichas ----
+  const sumarPor = (parametro) => {
+    const acumulado = {};
+    nacionalDetalle.filter(f => f.parametro === parametro).forEach(f => { acumulado[f.mes] = (acumulado[f.mes] || 0) + Number(f.valor); });
+    return acumulado;
+  };
+  const porMesJud = sumarPor('RECUPERO JUDICIAL');
+  const porMesExtra = sumarPor('RECUPERO EXTRA');
+  const porMesFichasJud = sumarPor('CAUSAS CON PAGOS JUD.');
+  const porMesFichasExtra = sumarPor('CAUSAS CON PAGOS EXT.');
+  const meses = [...new Set(nacionalDetalle.map(f => f.mes))].sort();
+  dibujarSeguimientoJudExtra('grafico-recupero-nacional', meses,
+    meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExtra[m] || 0),
+    meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExtra[m] || 0));
 
-  cargarSeguimiento('nacional', granularidadNacional);
+  cargarTodosLosSeguimientos(false);
 
   // ---- Gráfico: barras por estudio (últ. mes cerrado) ----
   const filasUltimoMes = base.filter(f => f.parametro === 'RECUPERO ULT.MES CERRADO' && Number(f.valor) > 0)
@@ -235,13 +242,9 @@ async function cargarVistaEstudio(estudioId) {
   const meses = [...new Set(filas.map(f => f.mes))].sort();
   const porParametro = (param) => meses.map(m => Number((filas.find(f => f.mes === m && f.parametro === param) || {}).valor || 0));
 
-  dibujarLineaConFichas('grafico-estudio-recupero', meses,
-    [
-      { etiqueta: 'Total', datos: porParametro('RECUPERO'), color: COLOR_BRONCE },
-      { etiqueta: 'Judicial', datos: porParametro('RECUPERO JUDICIAL'), color: COLOR_TINTA },
-      { etiqueta: 'Extrajudicial', datos: porParametro('RECUPERO EXTRA'), color: COLOR_VERDE },
-    ],
-    porParametro('CAUSAS CON PAGOS'));
+  dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
+    porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
+    porParametro('CAUSAS CON PAGOS JUD.'), porParametro('CAUSAS CON PAGOS EXT.'));
 
   const ultimoMes = meses[meses.length - 1];
   const valorEn = (param) => Number((filas.find(f => f.mes === ultimoMes && f.parametro === param) || {}).valor || 0);
@@ -254,14 +257,27 @@ async function cargarVistaEstudio(estudioId) {
   dibujarBarras('grafico-estudio-embargos', meses, porParametro('NUEVOS EMBARGOS'), COLOR_BRONCE);
 
   estudioSeleccionadoActual = estudioId;
-  cargarSeguimiento('estudio', granularidadEstudio, estudioId);
+  cargarTodosLosSeguimientos(true, estudioId);
 }
 
 // ============================================================
-// SEGUIMIENTO DIARIO/SEMANAL DEL RECUPERO
+// SEGUIMIENTO DIARIO/SEMANAL DEL RECUPERO (nacional y por estudio,
+// total y por compañía — judicial vs extrajudicial, con sus fichas)
 // ============================================================
-let granularidadNacional = 'diario';
-let granularidadEstudio = 'diario';
+// Mapea cada "objetivo" del selector a: qué compañía filtrar en
+// recupero_diario_detalle, si es a nivel nacional o de un estudio, y en qué
+// canvas dibujarlo.
+const CONFIG_SEGUIMIENTO = {
+  'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
+  'nacional-cfn': { compania: 'CFN', esEstudio: false, canvas: 'grafico-seguimiento-nacional-cfn' },
+  'nacional-em': { compania: 'EM', esEstudio: false, canvas: 'grafico-seguimiento-nacional-em' },
+  'nacional-confina': { compania: 'CONFINA', esEstudio: false, canvas: 'grafico-seguimiento-nacional-confina' },
+  'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
+  'estudio-cfn': { compania: 'CFN', esEstudio: true, canvas: 'grafico-seguimiento-estudio-cfn' },
+  'estudio-em': { compania: 'EM', esEstudio: true, canvas: 'grafico-seguimiento-estudio-em' },
+  'estudio-confina': { compania: 'CONFINA', esEstudio: true, canvas: 'grafico-seguimiento-estudio-confina' },
+};
+const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
 let estudioSeleccionadoActual = null;
 
 // Agrupa una fecha en la semana a la que pertenece (lunes de esa semana),
@@ -275,33 +291,44 @@ function claveDeSemana(fechaIso) {
 }
 
 async function cargarSeguimiento(objetivo, granularidad, estudioId) {
-  const idCanvas = objetivo === 'nacional' ? 'grafico-seguimiento-nacional' : 'grafico-seguimiento-estudio';
+  const config = CONFIG_SEGUIMIENTO[objetivo];
+  if (!config) return;
+  granularidadPorObjetivo[objetivo] = granularidad;
+  if (config.esEstudio && !estudioId) return; // todavía no hay estudio elegido
 
-  const construirConsulta = () => {
-    let q = supabaseClient.from('recupero_diario')
-      .select('fecha, valor_judicial, valor_extrajudicial, cantidad_fichas')
+  const filas = await consultarPaginado(() => {
+    let q = supabaseClient.from('recupero_diario_detalle')
+      .select('fecha, tipo, valor, cantidad_fichas')
+      .eq('compania', config.compania)
       .order('fecha', { ascending: true });
-    if (objetivo === 'estudio' && estudioId) q = q.eq('estudio_id', estudioId);
+    if (config.esEstudio) q = q.eq('estudio_id', estudioId);
     return q;
-  };
-  const filas = await consultarPaginado(construirConsulta);
+  });
 
   const agrupado = {};
   filas.forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichas: 0 };
-    agrupado[clave].judicial += Number(f.valor_judicial || 0);
-    agrupado[clave].extrajudicial += Number(f.valor_extrajudicial || 0);
-    agrupado[clave].fichas += Number(f.cantidad_fichas || 0);
+    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+    if (f.tipo === 'JUDICIAL') {
+      agrupado[clave].judicial += Number(f.valor || 0);
+      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
+    } else if (f.tipo === 'EXTRAJUDICIAL') {
+      agrupado[clave].extrajudicial += Number(f.valor || 0);
+      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
+    }
   });
   const claves = Object.keys(agrupado).sort();
   const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-  dibujarLineaConFichas(idCanvas, claves,
-    [
-      { etiqueta: 'Judicial' + sufijo, datos: claves.map(c => agrupado[c].judicial), color: COLOR_TINTA },
-      { etiqueta: 'Extrajudicial' + sufijo, datos: claves.map(c => agrupado[c].extrajudicial), color: COLOR_VERDE },
-    ],
-    claves.map(c => agrupado[c].fichas));
+  dibujarSeguimientoJudExtra(config.canvas, claves,
+    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
+    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
+    sufijo);
+}
+
+function cargarTodosLosSeguimientos(esEstudio, estudioId) {
+  Object.keys(CONFIG_SEGUIMIENTO)
+    .filter(objetivo => CONFIG_SEGUIMIENTO[objetivo].esEstudio === esEstudio)
+    .forEach(objetivo => cargarSeguimiento(objetivo, granularidadPorObjetivo[objetivo] || 'diario', estudioId));
 }
 
 document.querySelectorAll('.selector-granularidad').forEach(selector => {
@@ -312,13 +339,8 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
     boton.classList.add('activa');
     const objetivo = selector.dataset.objetivo;
     const granularidad = boton.dataset.granularidad;
-    if (objetivo === 'nacional') {
-      granularidadNacional = granularidad;
-      cargarSeguimiento('nacional', granularidadNacional);
-    } else {
-      granularidadEstudio = granularidad;
-      cargarSeguimiento('estudio', granularidadEstudio, estudioSeleccionadoActual);
-    }
+    const config = CONFIG_SEGUIMIENTO[objetivo];
+    cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
   });
 });
 
@@ -495,6 +517,44 @@ function dibujarLineaConFichas(id, etiquetas, lineas, datosFichas) {
     {
       type: 'bar', label: 'Cantidad de fichas', data: datosFichas,
       backgroundColor: 'rgba(37, 64, 74, 0.18)', yAxisID: 'y1', order: 99,
+    },
+  ];
+  graficos[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: etiquetas, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
+        y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
+
+// Gráfico combinado con 2 líneas (judicial/extrajudicial, eje izquierdo en $)
+// y 2 barras (cantidad de fichas judicial/extrajudicial, eje derecho) — para
+// diferenciar completamente ambos circuitos en un mismo gráfico.
+function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudicial, fichasJudicial, fichasExtrajudicial, sufijo) {
+  destruirSiExiste(id);
+  const ctx = document.getElementById(id);
+  const datasets = [
+    {
+      type: 'line', label: 'Judicial' + (sufijo || ''), data: valorJudicial, borderColor: COLOR_JUDICIAL,
+      backgroundColor: COLOR_JUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
+    },
+    {
+      type: 'line', label: 'Extrajudicial' + (sufijo || ''), data: valorExtrajudicial, borderColor: COLOR_EXTRAJUDICIAL,
+      backgroundColor: COLOR_EXTRAJUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
+    },
+    {
+      type: 'bar', label: 'Fichas judicial', data: fichasJudicial,
+      backgroundColor: COLOR_JUDICIAL + '33', yAxisID: 'y1', order: 99,
+    },
+    {
+      type: 'bar', label: 'Fichas extrajudicial', data: fichasExtrajudicial,
+      backgroundColor: COLOR_EXTRAJUDICIAL + '33', yAxisID: 'y1', order: 99,
     },
   ];
   graficos[id] = new Chart(ctx, {
