@@ -178,6 +178,7 @@ async function cargarVistaResumen() {
     meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExtra[m] || 0));
 
   cargarTodosLosSeguimientos(false);
+  cargarTodosLosPasosDetalle(false);
 
   // ---- Gráfico: barras por estudio (últ. mes cerrado) ----
   const filasUltimoMes = base.filter(f => f.parametro === 'RECUPERO ULT.MES CERRADO' && Number(f.valor) > 0)
@@ -251,13 +252,9 @@ async function cargarVistaEstudio(estudioId) {
   dibujarBarras('grafico-estudio-companias', ['CFN', 'Megatone', 'Confina'],
     [valorEn('RECUPERO CFN'), valorEn('RECUPERO EM'), valorEn('RECUPERO CONFINA')], COLOR_BRONCE);
 
-  dibujarBarras('grafico-estudio-pasos', meses, porParametro('CANT. DE SENTENCIAS FIRMES'), COLOR_TINTA,
-    { etiqueta2: 'Liquidaciones', datos2: porParametro('CANT. DE LIQUIDACIONES'), color2: COLOR_VERDE });
-
-  dibujarBarras('grafico-estudio-embargos', meses, porParametro('NUEVOS EMBARGOS'), COLOR_BRONCE);
-
   estudioSeleccionadoActual = estudioId;
   cargarTodosLosSeguimientos(true, estudioId);
+  cargarTodosLosPasosDetalle(true, estudioId);
 }
 
 // ============================================================
@@ -345,8 +342,54 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
 });
 
 // ============================================================
-// VISTA: CARGAR DATOS
+// CÉDULAS DE SENTENCIA / LIQUIDACIONES / EMBARGOS, POR COMPAÑÍA
+// (nacional y por estudio — cantidad de fichas por mes, sin selector de
+// granularidad porque Pasos Procesales se carga a nivel mensual)
 // ============================================================
+const CONFIG_PASOS_DETALLE = {
+  'nacional-total': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-pasos-nacional-total' },
+  'nacional-cfn': { compania: 'CFN', esEstudio: false, canvas: 'grafico-pasos-nacional-cfn' },
+  'nacional-em': { compania: 'EM', esEstudio: false, canvas: 'grafico-pasos-nacional-em' },
+  'nacional-confina': { compania: 'CONFINA', esEstudio: false, canvas: 'grafico-pasos-nacional-confina' },
+  'estudio-total': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-pasos-estudio-total' },
+  'estudio-cfn': { compania: 'CFN', esEstudio: true, canvas: 'grafico-pasos-estudio-cfn' },
+  'estudio-em': { compania: 'EM', esEstudio: true, canvas: 'grafico-pasos-estudio-em' },
+  'estudio-confina': { compania: 'CONFINA', esEstudio: true, canvas: 'grafico-pasos-estudio-confina' },
+};
+
+async function cargarPasosDetalle(objetivo, estudioId) {
+  const config = CONFIG_PASOS_DETALLE[objetivo];
+  if (!config) return;
+  if (config.esEstudio && !estudioId) return;
+
+  const filas = await consultarPaginado(() => {
+    let q = supabaseClient.from('pasos_mensual_detalle')
+      .select('mes, metrica, cantidad_fichas')
+      .eq('compania', config.compania)
+      .order('mes', { ascending: true });
+    if (config.esEstudio) q = q.eq('estudio_id', estudioId);
+    return q;
+  });
+
+  const agrupado = {};
+  filas.forEach(f => {
+    if (!agrupado[f.mes]) agrupado[f.mes] = { sentencia: 0, liquidacion: 0, embargo: 0 };
+    if (f.metrica === 'SENTENCIA') agrupado[f.mes].sentencia += Number(f.cantidad_fichas || 0);
+    else if (f.metrica === 'LIQUIDACION') agrupado[f.mes].liquidacion += Number(f.cantidad_fichas || 0);
+    else if (f.metrica === 'EMBARGO') agrupado[f.mes].embargo += Number(f.cantidad_fichas || 0);
+  });
+  const meses = Object.keys(agrupado).sort();
+  dibujarPasosPorMes(config.canvas, meses,
+    meses.map(m => agrupado[m].sentencia), meses.map(m => agrupado[m].liquidacion), meses.map(m => agrupado[m].embargo));
+}
+
+function cargarTodosLosPasosDetalle(esEstudio, estudioId) {
+  Object.keys(CONFIG_PASOS_DETALLE)
+    .filter(objetivo => CONFIG_PASOS_DETALLE[objetivo].esEstudio === esEstudio)
+    .forEach(objetivo => cargarPasosDetalle(objetivo, estudioId));
+}
+
+
 // Después de subir los archivos, el servidor sigue procesando en segundo
 // plano. En vez de obligar a refrescar la página a mano, consultamos el
 // Historial de Cargas cada 8 segundos hasta ver que terminó (ok o error), y
@@ -577,6 +620,30 @@ function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudi
         y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
         y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
       },
+    },
+  });
+}
+
+// Gráfico de las 3 métricas de Pasos Procesales (cédulas de sentencia,
+// liquidaciones, embargos) por mes — todas son "cantidad de fichas", así que
+// van en un solo eje, sin necesitar el doble eje que sí usan los de Recupero.
+function dibujarPasosPorMes(id, etiquetas, sentencia, liquidacion, embargo) {
+  destruirSiExiste(id);
+  const ctx = document.getElementById(id);
+  graficos[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: etiquetas,
+      datasets: [
+        { label: 'Cédulas de sentencia', data: sentencia, borderColor: COLOR_TINTA, backgroundColor: COLOR_TINTA + '22', tension: 0.25, pointRadius: 2 },
+        { label: 'Liquidaciones', data: liquidacion, borderColor: COLOR_VERDE, backgroundColor: COLOR_VERDE + '22', tension: 0.25, pointRadius: 2 },
+        { label: 'Embargos', data: embargo, borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE + '22', tension: 0.25, pointRadius: 2 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: { y: { title: { display: true, text: 'Cantidad de fichas' } } },
     },
   });
 }
