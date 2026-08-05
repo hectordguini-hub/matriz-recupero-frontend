@@ -78,6 +78,7 @@ function mostrarApp(session) {
   document.getElementById('usuario-email').textContent = session.user.email;
   cargarVistaResumen();
   cargarSelectorEstudios();
+  cargarVistaEmpresa('CFN');
   cargarLogCargas();
 }
 
@@ -232,6 +233,9 @@ async function cargarSelectorEstudios() {
 }
 
 async function cargarVistaEstudio(estudioId) {
+  const { data: base } = await supabaseClient.from('base_gral').select('parametro, valor').eq('estudio_id', estudioId);
+  const valorBase = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
+
   const filas = await consultarPaginado(() => supabaseClient
     .from('matriz_mensual')
     .select('mes, parametro, valor')
@@ -242,6 +246,17 @@ async function cargarVistaEstudio(estudioId) {
 
   const meses = [...new Set(filas.map(f => f.mes))].sort();
   const porParametro = (param) => meses.map(m => Number((filas.find(f => f.mes === m && f.parametro === param) || {}).valor || 0));
+  const ultimoMesRecupero = meses.length ? meses[meses.length - 1] : null;
+  const fichasUltimoMes = filas.filter(f => f.mes === ultimoMesRecupero && f.parametro === 'CAUSAS CON PAGOS').reduce((a, f) => a + Number(f.valor), 0);
+
+  document.getElementById('kpis-estudio').innerHTML = [
+    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')) },
+    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasUltimoMes) },
+    { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
+    { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorBase('INICIADAS')) },
+    { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
+    { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
+  ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
 
   dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
     porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
@@ -255,6 +270,87 @@ async function cargarVistaEstudio(estudioId) {
   estudioSeleccionadoActual = estudioId;
   cargarTodosLosSeguimientos(true, estudioId);
   cargarTodosLosPasosDetalle(true, estudioId);
+}
+
+// ============================================================
+// VISTA: POR EMPRESA (CFN / Megatone / Confina, a nivel nacional)
+// ============================================================
+let companiaSeleccionadaActual = 'CFN';
+let granularidadEmpresa = 'diario';
+
+document.getElementById('selector-empresa').addEventListener('change', (e) => {
+  cargarVistaEmpresa(e.target.value);
+});
+
+async function cargarVistaEmpresa(compania) {
+  companiaSeleccionadaActual = compania;
+
+  const { data: base } = await supabaseClient.from('base_gral_por_compania').select('parametro, valor').eq('compania', compania);
+  const valorBase = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
+
+  const nombreParam = { CFN: 'CFN', EM: 'EM', CONFINA: 'CONFINA' }[compania];
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('matriz_mensual')
+    .select('mes, parametro, valor')
+    .in('parametro', [`RECUPERO ${nombreParam} JUD.`, `RECUPERO ${nombreParam} EXT.`, `CCP ${nombreParam} JUD.`, `CCP ${nombreParam} EXT.`])
+    .order('mes', { ascending: true })
+  );
+  const sumarPorMes = (parametro) => {
+    const acumulado = {};
+    filas.filter(f => f.parametro === parametro).forEach(f => { acumulado[f.mes] = (acumulado[f.mes] || 0) + Number(f.valor); });
+    return acumulado;
+  };
+  const porMesJud = sumarPorMes(`RECUPERO ${nombreParam} JUD.`);
+  const porMesExt = sumarPorMes(`RECUPERO ${nombreParam} EXT.`);
+  const porMesFichasJud = sumarPorMes(`CCP ${nombreParam} JUD.`);
+  const porMesFichasExt = sumarPorMes(`CCP ${nombreParam} EXT.`);
+  const meses = [...new Set(filas.map(f => f.mes))].sort();
+  const ultimoMes = meses.length ? meses[meses.length - 1] : null;
+  const fichasUltimoMes = (porMesFichasJud[ultimoMes] || 0) + (porMesFichasExt[ultimoMes] || 0);
+
+  document.getElementById('kpis-empresa').innerHTML = [
+    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')) },
+    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasUltimoMes) },
+    { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
+    { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorBase('INICIADAS')) },
+    { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
+    { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
+  ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
+
+  dibujarSeguimientoJudExtra('grafico-empresa-recupero', meses,
+    meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExt[m] || 0),
+    meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExt[m] || 0));
+
+  cargarSeguimientoEmpresa(compania, granularidadEmpresa);
+}
+
+async function cargarSeguimientoEmpresa(compania, granularidad) {
+  granularidadEmpresa = granularidad;
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('recupero_diario_detalle')
+    .select('fecha, tipo, valor, cantidad_fichas')
+    .eq('compania', compania)
+    .order('fecha', { ascending: true })
+  );
+
+  const agrupado = {};
+  filas.forEach(f => {
+    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+    if (f.tipo === 'JUDICIAL') {
+      agrupado[clave].judicial += Number(f.valor || 0);
+      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
+    } else if (f.tipo === 'EXTRAJUDICIAL') {
+      agrupado[clave].extrajudicial += Number(f.valor || 0);
+      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
+    }
+  });
+  const claves = Object.keys(agrupado).sort();
+  const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  dibujarSeguimientoJudExtra('grafico-seguimiento-empresa', claves,
+    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
+    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
+    sufijo);
 }
 
 // ============================================================
@@ -336,6 +432,10 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
     boton.classList.add('activa');
     const objetivo = selector.dataset.objetivo;
     const granularidad = boton.dataset.granularidad;
+    if (objetivo === 'empresa') {
+      cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
+      return;
+    }
     const config = CONFIG_SEGUIMIENTO[objetivo];
     cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
   });
@@ -411,6 +511,7 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
         estadoEl.className = 'mensaje-estado ok';
         cargarVistaResumen();
         cargarSelectorEstudios();
+        cargarVistaEmpresa(companiaSeleccionadaActual);
       } else {
         estadoEl.textContent = `Error: ${filaFinal.mensaje}`;
         estadoEl.className = 'mensaje-estado error';
@@ -497,6 +598,40 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
     estadoEl.className = 'mensaje-estado ok';
     cargarLogCargas();
     esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+document.getElementById('form-backfill-compania').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('backfill-estado');
+  const boton = document.getElementById('btn-backfill-compania');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('backfill-archivo').files[0]);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-compania`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Compañía ya está actualizada. Revisá "Por Empresa".');
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
     estadoEl.className = 'mensaje-estado error';
@@ -813,6 +948,17 @@ document.getElementById('btn-exportar-pdf').addEventListener('click', async () =
     boton.disabled = false;
     boton.textContent = textoOriginal;
   }
+});
+
+// Los gráficos dentro de un <details> pueden quedar mal dimensionados si se
+// dibujaron mientras estaba cerrado — al reabrir, le pedimos a Chart.js que
+// vuelva a calcular el tamaño.
+document.querySelectorAll('details.desplegable').forEach(detalle => {
+  detalle.addEventListener('toggle', () => {
+    if (!detalle.open) return;
+    const canvas = detalle.querySelector('canvas');
+    if (canvas && graficos[canvas.id]) graficos[canvas.id].resize();
+  });
 });
 
 iniciarApp();
