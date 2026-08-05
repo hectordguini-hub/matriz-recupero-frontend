@@ -69,6 +69,7 @@
     <nav class="pestanas" id="nav-pestanas">
       <button class="pestana activa" data-vista="resumen">Resumen General</button>
       <button class="pestana" data-vista="estudio">Por Estudio</button>
+      <button class="pestana" data-vista="empresa">Por Empresa</button>
       <button class="pestana" data-vista="cargar">Carga Completa</button>
       <button class="pestana" data-vista="incremental">Carga Mensual</button>
     </nav>
@@ -144,22 +145,25 @@
           <h3>Judicial vs. extrajudicial (últ. mes)</h3>
           <canvas id="grafico-torta-jud-extra"></canvas>
         </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Total (nacional)</h3>
+      </div>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Cédulas de sentencia / liquidaciones / embargos — Total (nacional)</summary>
           <canvas id="grafico-pasos-nacional-total"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — CFN (nacional)</h3>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Cédulas de sentencia / liquidaciones / embargos — CFN (nacional)</summary>
           <canvas id="grafico-pasos-nacional-cfn"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Megatone (nacional)</h3>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Cédulas de sentencia / liquidaciones / embargos — Megatone (nacional)</summary>
           <canvas id="grafico-pasos-nacional-em"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Confina (nacional)</h3>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Cédulas de sentencia / liquidaciones / embargos — Confina (nacional)</summary>
           <canvas id="grafico-pasos-nacional-confina"></canvas>
-        </div>
+        </details>
       </div>
 
       <div class="tabla-contenedor">
@@ -182,6 +186,8 @@
         <h2>Detalle por estudio</h2>
         <select id="selector-estudio"></select>
       </div>
+
+      <div class="tarjetas-kpi" id="kpis-estudio"></div>
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
@@ -251,6 +257,37 @@
       </div>
     </section>
 
+    <!-- ---------- VISTA: POR EMPRESA ---------- -->
+    <section id="vista-empresa" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Detalle por empresa</h2>
+        <select id="selector-empresa">
+          <option value="CFN">CFN</option>
+          <option value="EM">Electrónica Megatone</option>
+          <option value="CONFINA">Confina</option>
+        </select>
+      </div>
+
+      <div class="tarjetas-kpi" id="kpis-empresa"></div>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico ancho-completo">
+          <h3>Recupero mensual — total / judicial / extrajudicial</h3>
+          <canvas id="grafico-empresa-recupero"></canvas>
+        </div>
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Seguimiento del recupero — esta empresa</h3>
+            <div class="selector-granularidad" data-objetivo="empresa">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <canvas id="grafico-seguimiento-empresa"></canvas>
+        </div>
+      </div>
+    </section>
+
     <!-- ---------- VISTA: CARGA COMPLETA ---------- -->
     <section id="vista-cargar" class="vista oculto">
       <h2>Carga completa (reprocesa todo desde cero)</h2>
@@ -297,6 +334,16 @@
         <button type="submit" id="btn-incremental">Procesar y guardar</button>
         <p id="incremental-estado" class="mensaje-estado"></p>
       </form>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Actualizar solo la Compañía (una vez, si "Por Empresa" está en cero)</summary>
+        <p class="ayuda">Uso puntual: subí cualquier extracto de Cartera que tenga las columnas "Ficha" y "Compania" (puede ser tu Cartera completa actual) — actualiza SOLO ese dato en las causas que ya tenés cargadas, sin reprocesar nada más. No hace falta usarlo todos los meses.</p>
+        <form id="form-backfill-compania" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha + Compania <input type="file" id="backfill-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-compania">Actualizar Compañía</button>
+          <p id="backfill-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
 
       <div class="tabla-contenedor">
         <h3>Historial de cargas</h3>
