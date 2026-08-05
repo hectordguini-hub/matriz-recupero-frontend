@@ -175,6 +175,13 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
   padding: 1.1rem 1.2rem 0.6rem;
 }
 .tarjeta-grafico.ancho-completo { grid-column: 1 / -1; }
+.desplegable summary {
+  cursor: pointer; font-size: 0.95rem; font-weight: 600; color: var(--tinta-suave);
+  margin: 0 0 0.6rem; list-style: none;
+}
+.desplegable summary::-webkit-details-marker { display: none; }
+.desplegable summary::before { content: '▸ '; color: var(--bronce); }
+.desplegable[open] summary::before { content: '▾ '; }
 .tarjeta-grafico h3 { margin: 0 0 0.6rem; font-size: 0.95rem; font-weight: 600; color: var(--tinta-suave); }
 .tarjeta-grafico canvas { max-height: 320px; }
 
