@@ -201,14 +201,18 @@ async function cargarVistaResumen() {
 }
 
 async function cargarKpisGenerales(companiaSeleccionada) {
-  let valorFn, fichasUltimoMes = 0;
+  let valorFn, fichasJud = 0, fichasExt = 0;
   if (companiaSeleccionada === 'GENERAL') {
     const { data: base } = await supabaseClient.from('base_gral').select('parametro, valor');
     valorFn = (param) => (base || []).filter(f => f.parametro === param).reduce((acc, f) => acc + Number(f.valor), 0);
     const nacionalFichas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, valor').eq('parametro', 'CAUSAS CON PAGOS').order('mes', { ascending: true }));
-    const ultimoMes = nacionalFichas.length ? nacionalFichas[nacionalFichas.length - 1].mes : null;
-    fichasUltimoMes = nacionalFichas.filter(f => f.mes === ultimoMes).reduce((a, f) => a + Number(f.valor), 0);
+      .from('matriz_mensual').select('mes, parametro, valor')
+      .in('parametro', ['CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.'])
+      .order('mes', { ascending: true }));
+    const meses = [...new Set(nacionalFichas.map(f => f.mes))].sort();
+    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
+    fichasJud = nacionalFichas.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS JUD.').reduce((a, f) => a + Number(f.valor), 0);
+    fichasExt = nacionalFichas.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS EXT.').reduce((a, f) => a + Number(f.valor), 0);
   } else {
     const { data: base } = await supabaseClient.from('base_gral_por_compania').select('parametro, valor').eq('compania', companiaSeleccionada);
     valorFn = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
@@ -218,11 +222,14 @@ async function cargarKpisGenerales(companiaSeleccionada) {
       .order('mes', { ascending: true }));
     const meses = [...new Set(filasMes.map(f => f.mes))].sort();
     const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasUltimoMes = filasMes.filter(f => f.mes === ultimoMes).reduce((a, f) => a + Number(f.valor), 0);
+    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} JUD.`).reduce((a, f) => a + Number(f.valor), 0);
+    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
   }
   const kpis = [
     { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')) },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasUltimoMes) },
+    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
+    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
+    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'Causas en gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
     { etiqueta: 'Causas iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
     { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
@@ -247,15 +254,17 @@ async function cargarSelectorEstudios() {
 }
 
 async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
-  let valorFn, fichasUltimoMes = 0;
+  let valorFn, fichasJud = 0, fichasExt = 0;
   if (companiaSeleccionada === 'GENERAL') {
     const { data: base } = await supabaseClient.from('base_gral').select('parametro, valor').eq('estudio_id', estudioId);
     valorFn = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
     const filasMes = await consultarPaginado(() => supabaseClient
       .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
-      .eq('parametro', 'CAUSAS CON PAGOS').order('mes', { ascending: true }));
-    const ultimoMes = filasMes.length ? filasMes[filasMes.length - 1].mes : null;
-    fichasUltimoMes = filasMes.filter(f => f.mes === ultimoMes).reduce((a, f) => a + Number(f.valor), 0);
+      .in('parametro', ['CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.']).order('mes', { ascending: true }));
+    const meses = [...new Set(filasMes.map(f => f.mes))].sort();
+    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
+    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS JUD.').reduce((a, f) => a + Number(f.valor), 0);
+    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS EXT.').reduce((a, f) => a + Number(f.valor), 0);
   } else {
     const { data: base } = await supabaseClient.from('base_gral_por_estudio_compania').select('parametro, valor')
       .eq('estudio_id', estudioId).eq('compania', companiaSeleccionada);
@@ -266,11 +275,14 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
       .order('mes', { ascending: true }));
     const meses = [...new Set(filasMes.map(f => f.mes))].sort();
     const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasUltimoMes = filasMes.filter(f => f.mes === ultimoMes).reduce((a, f) => a + Number(f.valor), 0);
+    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} JUD.`).reduce((a, f) => a + Number(f.valor), 0);
+    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
   }
   document.getElementById('kpis-estudio').innerHTML = [
     { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')) },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasUltimoMes) },
+    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
+    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
+    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
     { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
     { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
@@ -344,11 +356,14 @@ async function cargarVistaEmpresa(compania) {
   const porMesFichasExt = sumarPorMes(`CCP ${nombreParam} EXT.`);
   const meses = [...new Set(filas.map(f => f.mes))].sort();
   const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-  const fichasUltimoMes = (porMesFichasJud[ultimoMes] || 0) + (porMesFichasExt[ultimoMes] || 0);
+  const fichasJud = porMesFichasJud[ultimoMes] || 0;
+  const fichasExt = porMesFichasExt[ultimoMes] || 0;
 
   document.getElementById('kpis-empresa').innerHTML = [
     { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')) },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasUltimoMes) },
+    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
+    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
+    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
     { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorBase('INICIADAS')) },
     { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
