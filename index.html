@@ -83,11 +83,7 @@
     <!-- ---------- VISTA: RESUMEN GENERAL ---------- -->
     <section id="vista-resumen" class="vista">
       <div class="fila-encabezado-vista">
-        <h2>Resumen general por estudio</h2>
-        <div class="acciones-encabezado">
-          <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
-          <button id="btn-exportar-pdf" class="btn-secundario">Descargar informe completo (PDF)</button>
-        </div>
+        <h2>Resumen General</h2>
       </div>
 
       <div class="fila-titulo-selector">
@@ -99,16 +95,17 @@
           <option value="CONFINA">Confina</option>
         </select>
       </div>
-      <div class="tarjetas-kpi" id="kpis-generales"></div>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-generales"></div>
+
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero mensual — total nacional</h3>
+          <h3>Recupero Mensual — Total Nacional</h3>
           <canvas id="grafico-recupero-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del recupero — nacional</h3>
+            <h3>Seguimiento del Recupero — Nacional</h3>
             <div class="selector-granularidad" data-objetivo="nacional">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
@@ -117,34 +114,18 @@
           <canvas id="grafico-seguimiento-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento — CFN (nacional)</h3>
-            <div class="selector-granularidad" data-objetivo="nacional-cfn">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <canvas id="grafico-seguimiento-nacional-cfn"></canvas>
+          <h3 id="titulo-grafico-recupero-companias">Recupero Mensual — por compañía</h3>
+          <canvas id="grafico-recupero-nacional-companias"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
-            <h3>Seguimiento — Electrónica Megatone (nacional)</h3>
-            <div class="selector-granularidad" data-objetivo="nacional-em">
+            <h3 id="titulo-grafico-seguimiento-todas">Seguimiento — TODAS (Nacional)</h3>
+            <div class="selector-granularidad" data-objetivo="todas">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-seguimiento-nacional-em"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento — Confina (nacional)</h3>
-            <div class="selector-granularidad" data-objetivo="nacional-confina">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <canvas id="grafico-seguimiento-nacional-confina"></canvas>
+          <canvas id="grafico-seguimiento-nacional-todas"></canvas>
         </div>
         <div class="tarjeta-grafico">
           <h3>Recupero del último mes cerrado, por estudio</h3>
@@ -186,6 +167,11 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div class="pie-vista-resumen">
+        <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
+        <button id="btn-exportar-pdf" class="btn-secundario">Descargar informe completo (PDF)</button>
       </div>
     </section>
 
