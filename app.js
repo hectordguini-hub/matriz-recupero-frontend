@@ -25,6 +25,9 @@ const COLOR_ROJO = '#a23b2d';
 const COLOR_LINEA = '#dedad0';
 const COLOR_JUDICIAL = '#25404a';       // navy — bien distinto del extrajudicial
 const COLOR_EXTRAJUDICIAL = '#c9820a';  // ámbar — bien distinto del judicial y del verde
+const COLOR_CFN = '#ca0130';       // bronce/rojo
+const COLOR_EM = '#25404a';        // navy
+const COLOR_CONFINA = '#3f6b4f';   // verde
 
 const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const formateadorNumero = new Intl.NumberFormat('es-AR');
@@ -136,6 +139,8 @@ async function cargarVistaResumen() {
   );
   // ---- KPIs (según el selector General/CFN/Megatone/Confina) ----
   cargarKpisGenerales(document.getElementById('selector-compania-general').value);
+  cargarGraficoRecuperoPorCompania(document.getElementById('selector-compania-general').value);
+  cargarSeguimientoTodasNacional(document.getElementById('selector-compania-general').value, granularidadTodasNacional);
 
   const ultimaActualizacion = base.reduce((max, f) => f.actualizado_en > max ? f.actualizado_en : max, '');
   document.getElementById('resumen-actualizado').textContent = ultimaActualizacion
@@ -238,8 +243,126 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     <div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
 }
 
+let granularidadTodasNacional = 'diario';
+
+// Gráfico 1: Recupero mensual, con una línea + una barra de fichas por cada
+// compañía (CFN/Megatone/Confina) — o, si se elige una compañía puntual en
+// el desplegable, el mismo detalle judicial/extrajudicial que ya usa "Por
+// Empresa" (mismos datos, mismo gráfico, reutilizado acá).
+async function cargarGraficoRecuperoPorCompania(companiaSeleccionada) {
+  const tituloEl = document.getElementById('titulo-grafico-recupero-companias');
+  if (companiaSeleccionada === 'GENERAL') {
+    tituloEl.textContent = 'Recupero mensual — por compañía';
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('matriz_mensual').select('mes, parametro, valor')
+      .in('parametro', ['RECUPERO CFN', 'RECUPERO EM', 'RECUPERO CONFINA', 'CCP CFN', 'CCP EM', 'CCP CONFINA'])
+      .order('mes', { ascending: true }));
+    const sumarPor = (parametro) => {
+      const acc = {};
+      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
+      return acc;
+    };
+    const meses = [...new Set(filas.map(f => f.mes))].sort();
+    const porCfn = sumarPor('RECUPERO CFN'), porEm = sumarPor('RECUPERO EM'), porConfina = sumarPor('RECUPERO CONFINA');
+    const fichasCfn = sumarPor('CCP CFN'), fichasEm = sumarPor('CCP EM'), fichasConfina = sumarPor('CCP CONFINA');
+    dibujarMultiSeguimiento('grafico-recupero-nacional-companias', meses,
+      [
+        { etiqueta: 'CFN SRL', datos: meses.map(m => porCfn[m] || 0), color: COLOR_CFN },
+        { etiqueta: 'Electrónica Megatone SRL', datos: meses.map(m => porEm[m] || 0), color: COLOR_EM },
+        { etiqueta: 'Confina SRL', datos: meses.map(m => porConfina[m] || 0), color: COLOR_CONFINA },
+      ],
+      [
+        { etiqueta: 'Fichas CFN', datos: meses.map(m => fichasCfn[m] || 0), color: COLOR_CFN },
+        { etiqueta: 'Fichas Megatone', datos: meses.map(m => fichasEm[m] || 0), color: COLOR_EM },
+        { etiqueta: 'Fichas Confina', datos: meses.map(m => fichasConfina[m] || 0), color: COLOR_CONFINA },
+      ]);
+  } else {
+    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
+    tituloEl.textContent = `Recupero mensual — ${nombreCia} (judicial / extrajudicial)`;
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('matriz_mensual').select('mes, parametro, valor')
+      .in('parametro', [`RECUPERO ${companiaSeleccionada} JUD.`, `RECUPERO ${companiaSeleccionada} EXT.`, `CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
+      .order('mes', { ascending: true }));
+    const sumarPor = (parametro) => {
+      const acc = {};
+      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
+      return acc;
+    };
+    const meses = [...new Set(filas.map(f => f.mes))].sort();
+    const porJud = sumarPor(`RECUPERO ${companiaSeleccionada} JUD.`), porExt = sumarPor(`RECUPERO ${companiaSeleccionada} EXT.`);
+    const fichasJud = sumarPor(`CCP ${companiaSeleccionada} JUD.`), fichasExt = sumarPor(`CCP ${companiaSeleccionada} EXT.`);
+    dibujarSeguimientoJudExtra('grafico-recupero-nacional-companias', meses,
+      meses.map(m => porJud[m] || 0), meses.map(m => porExt[m] || 0),
+      meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
+  }
+}
+
+// Gráfico 2: mismo criterio, pero diario/semanal en vez de mensual.
+async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad) {
+  granularidadTodasNacional = granularidad;
+  const tituloEl = document.getElementById('titulo-grafico-seguimiento-todas');
+
+  if (companiaSeleccionada === 'GENERAL') {
+    tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('recupero_diario')
+      .select('fecha, valor_cfn, cantidad_cfn, valor_em, cantidad_em, valor_confina, cantidad_confina')
+      .order('fecha', { ascending: true }));
+    const agrupado = {};
+    filas.forEach(f => {
+      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+      if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
+      agrupado[clave].cfn += Number(f.valor_cfn || 0);
+      agrupado[clave].em += Number(f.valor_em || 0);
+      agrupado[clave].confina += Number(f.valor_confina || 0);
+      agrupado[clave].fCfn += Number(f.cantidad_cfn || 0);
+      agrupado[clave].fEm += Number(f.cantidad_em || 0);
+      agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
+    });
+    const claves = Object.keys(agrupado).sort();
+    dibujarMultiSeguimiento('grafico-seguimiento-nacional-todas', claves,
+      [
+        { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
+        { etiqueta: 'Electrónica Megatone SRL', datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
+        { etiqueta: 'Confina SRL', datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
+      ],
+      [
+        { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
+        { etiqueta: 'Fichas Megatone', datos: claves.map(c => agrupado[c].fEm), color: COLOR_EM },
+        { etiqueta: 'Fichas Confina', datos: claves.map(c => agrupado[c].fConfina), color: COLOR_CONFINA },
+      ]);
+  } else {
+    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
+    tituloEl.textContent = `Seguimiento — ${nombreCia} (Nacional)`;
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('recupero_diario_detalle')
+      .select('fecha, tipo, valor, cantidad_fichas')
+      .eq('compania', companiaSeleccionada)
+      .order('fecha', { ascending: true }));
+    const agrupado = {};
+    filas.forEach(f => {
+      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+      if (f.tipo === 'JUDICIAL') {
+        agrupado[clave].judicial += Number(f.valor || 0);
+        agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
+      } else if (f.tipo === 'EXTRAJUDICIAL') {
+        agrupado[clave].extrajudicial += Number(f.valor || 0);
+        agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
+      }
+    });
+    const claves = Object.keys(agrupado).sort();
+    const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+    dibujarSeguimientoJudExtra('grafico-seguimiento-nacional-todas', claves,
+      claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
+      claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
+  }
+}
+
 document.getElementById('selector-compania-general').addEventListener('change', (e) => {
   cargarKpisGenerales(e.target.value);
+  cargarGraficoRecuperoPorCompania(e.target.value);
+  cargarSeguimientoTodasNacional(e.target.value, granularidadTodasNacional);
 });
 
 // ============================================================
@@ -415,9 +538,6 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
 // canvas dibujarlo.
 const CONFIG_SEGUIMIENTO = {
   'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
-  'nacional-cfn': { compania: 'CFN', esEstudio: false, canvas: 'grafico-seguimiento-nacional-cfn' },
-  'nacional-em': { compania: 'EM', esEstudio: false, canvas: 'grafico-seguimiento-nacional-em' },
-  'nacional-confina': { compania: 'CONFINA', esEstudio: false, canvas: 'grafico-seguimiento-nacional-confina' },
   'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
   'estudio-cfn': { compania: 'CFN', esEstudio: true, canvas: 'grafico-seguimiento-estudio-cfn' },
   'estudio-em': { compania: 'EM', esEstudio: true, canvas: 'grafico-seguimiento-estudio-em' },
@@ -487,6 +607,10 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
     const granularidad = boton.dataset.granularidad;
     if (objetivo === 'empresa') {
       cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
+      return;
+    }
+    if (objetivo === 'todas') {
+      cargarSeguimientoTodasNacional(document.getElementById('selector-compania-general').value, granularidad);
       return;
     }
     const config = CONFIG_SEGUIMIENTO[objetivo];
@@ -797,6 +921,37 @@ function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudi
       type: 'bar', label: 'Fichas extrajudicial', data: fichasExtrajudicial,
       backgroundColor: COLOR_EXTRAJUDICIAL + '33', yAxisID: 'y1', order: 99,
     },
+  ];
+  graficos[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: etiquetas, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
+        y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
+
+// Versión genérica de dibujarSeguimientoJudExtra: en vez de 2 series fijas
+// (judicial/extrajudicial), recibe un array de líneas y un array de barras
+// — se usa para el desglose por compañía (CFN/Megatone/Confina), que son 3
+// series en vez de 2.
+// lineas / barras: [{ etiqueta, datos, color }]
+function dibujarMultiSeguimiento(id, etiquetas, lineas, barras) {
+  destruirSiExiste(id);
+  const ctx = document.getElementById(id);
+  const datasets = [
+    ...lineas.map(l => ({
+      type: 'line', label: l.etiqueta, data: l.datos, borderColor: l.color,
+      backgroundColor: l.color + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
+    })),
+    ...barras.map(b => ({
+      type: 'bar', label: b.etiqueta, data: b.datos, backgroundColor: b.color + '33', yAxisID: 'y1', order: 99,
+    })),
   ];
   graficos[id] = new Chart(ctx, {
     type: 'bar',
