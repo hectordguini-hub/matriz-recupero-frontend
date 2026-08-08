@@ -138,9 +138,9 @@ async function cargarVistaResumen() {
     .order('mes', { ascending: true })
   );
   // ---- KPIs (según el selector General/CFN/Megatone/Confina) ----
-  cargarKpisGenerales(document.getElementById('selector-compania-general').value);
-  cargarGraficoRecuperoPorCompania(document.getElementById('selector-compania-general').value);
-  cargarSeguimientoTodasNacional(document.getElementById('selector-compania-general').value, granularidadTodasNacional);
+  cargarKpisGenerales('GENERAL');
+  cargarGraficoRecuperoPorCompania('GENERAL');
+  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional);
 
   const ultimaActualizacion = base.reduce((max, f) => f.actualizado_en > max ? f.actualizado_en : max, '');
   document.getElementById('resumen-actualizado').textContent = ultimaActualizacion
@@ -358,12 +358,6 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
       claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
   }
 }
-
-document.getElementById('selector-compania-general').addEventListener('change', (e) => {
-  cargarKpisGenerales(e.target.value);
-  cargarGraficoRecuperoPorCompania(e.target.value);
-  cargarSeguimientoTodasNacional(e.target.value, granularidadTodasNacional);
-});
 
 // ============================================================
 // VISTA: POR ESTUDIO
@@ -610,7 +604,7 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
       return;
     }
     if (objetivo === 'todas') {
-      cargarSeguimientoTodasNacional(document.getElementById('selector-compania-general').value, granularidad);
+      cargarSeguimientoTodasNacional('GENERAL', granularidad);
       return;
     }
     const config = CONFIG_SEGUIMIENTO[objetivo];
