@@ -91,12 +91,12 @@
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero mensual — Total Nacional</h3>
+          <h3>Recupero mensual — total nacional</h3>
           <canvas id="grafico-recupero-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del Recupero — Nacional</h3>
+            <h3>Seguimiento del recupero — nacional</h3>
             <div class="selector-granularidad" data-objetivo="nacional">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
@@ -105,7 +105,7 @@
           <canvas id="grafico-seguimiento-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
-          <h3 id="titulo-grafico-recupero-companias">Recupero Mensual — Por Compañía</h3>
+          <h3 id="titulo-grafico-recupero-companias">Recupero mensual — por compañía</h3>
           <canvas id="grafico-recupero-nacional-companias"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
@@ -176,7 +176,7 @@
       <div class="fila-titulo-selector">
         <span class="etiqueta-actualizado">Indicadores</span>
         <select id="selector-compania-estudio">
-          <option value="GENERAL">TODAS</option>
+          <option value="GENERAL">General (todas)</option>
           <option value="CFN">CFN</option>
           <option value="EM">Electrónica Megatone</option>
           <option value="CONFINA">Confina</option>
@@ -337,6 +337,19 @@
           <label class="campo-archivo">Archivo con Ficha + Compania <input type="file" id="backfill-archivo" accept=".xlsx,.csv" required></label>
           <button type="submit" id="btn-backfill-compania">Actualizar Compañía</button>
           <p id="backfill-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Pasos Procesales de un mes anterior</summary>
+        <p class="ayuda">Para ir completando meses pasados de a uno, sin subir altas/bajas/Recupero de ese mismo mes — usa la referencia de Juzgado/Abogados ya guardada.</p>
+        <form id="form-pasos-historico" class="tarjeta-carga">
+          <label class="campo-archivo">Mes al que corresponden estos Pasos Procesales
+            <input type="date" id="pasos-historico-mes" required>
+          </label>
+          <label class="campo-archivo">Pasos Procesales de ese mes <input type="file" id="pasos-historico-archivo" accept=".xlsx" required></label>
+          <button type="submit" id="btn-pasos-historico">Cargar Pasos Procesales de ese mes</button>
+          <p id="pasos-historico-estado" class="mensaje-estado"></p>
         </form>
       </details>
 
