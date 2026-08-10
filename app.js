@@ -811,6 +811,41 @@ document.getElementById('form-backfill-compania').addEventListener('submit', asy
   }
 });
 
+document.getElementById('form-pasos-historico').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('pasos-historico-estado');
+  const boton = document.getElementById('btn-pasos-historico');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('mes', document.getElementById('pasos-historico-mes').value);
+  formData.append('pasos_mes', document.getElementById('pasos-historico-archivo').files[0]);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-pasos-historico`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — Pasos Procesales de ese mes ya está cargado.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 async function cargarLogCargas() {
   const { data: log } = await supabaseClient
     .from('cargas_log')
