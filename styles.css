@@ -93,6 +93,13 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
   color: #f2efe6;
   border-bottom: 3px solid var(--bronce);
 }
+.encabezado-izq { display: flex; align-items: center; gap: 0.9rem; }
+.btn-toggle-menu {
+  background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff;
+  border-radius: var(--radio); padding: 0.35rem 0.6rem; cursor: pointer; font-size: 1rem; line-height: 1;
+}
+.btn-toggle-menu:hover { background: rgba(255,255,255,0.1); }
+
 .marca { display: flex; align-items: center; gap: 0.7rem; }
 .marca-logo {
   width: 34px; height: 34px; object-fit: contain;
@@ -101,20 +108,37 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
 .marca strong { display: block; font-size: 1.05rem; letter-spacing: 0.01em; }
 .marca-sub { font-size: 0.72rem; color: #b9c7cc; letter-spacing: 0.03em; }
 
-.pestanas { display: flex; gap: 0.25rem; }
-.pestana {
+.cuerpo-app { display: flex; align-items: flex-start; min-height: calc(100vh - 62px); }
+
+.menu-lateral {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  width: 210px; flex-shrink: 0;
+  background: var(--tinta);
+  padding: 1rem 0.6rem;
+  min-height: calc(100vh - 62px);
+  transition: margin-left 0.2s ease, width 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+}
+.menu-lateral.oculto-menu {
+  width: 0; padding-left: 0; padding-right: 0; margin-left: -210px; opacity: 0;
+  overflow: hidden;
+}
+.menu-lateral .pestana {
   background: transparent;
   border: none;
   color: #cfd5e0;
-  padding: 0.55rem 1rem;
+  padding: 0.65rem 0.9rem;
   font-family: 'Fira Sans', sans-serif;
   font-size: 0.9rem;
+  text-align: left;
   cursor: pointer;
-  border-radius: var(--radio) var(--radio) 0 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radio);
+  border-left: 3px solid transparent;
+  white-space: nowrap;
 }
-.pestana:hover { color: #fff; }
-.pestana.activa { color: #fff; border-bottom-color: var(--bronce-claro); }
+.menu-lateral .pestana:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.menu-lateral .pestana.activa { color: #fff; background: rgba(255,255,255,0.1); border-left-color: var(--bronce-claro); font-weight: 600; }
+
+.cuerpo-app main { flex: 1; min-width: 0; }
 
 .sesion { display: flex; align-items: center; gap: 0.9rem; font-size: 0.85rem; color: #cfd5e0; }
 .btn-texto { background: none; border: none; color: var(--bronce-claro); cursor: pointer; font-size: 0.85rem; padding: 0; }
