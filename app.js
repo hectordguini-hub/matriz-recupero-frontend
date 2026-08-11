@@ -584,7 +584,8 @@ async function cargarVistaEmpresa(compania) {
     porEstudio[nombre] = porEstudio[nombre] || {};
     porEstudio[nombre][f.parametro] = Number(f.valor);
   });
-  const filasTablaEstudio = Object.entries(porEstudio).sort((a, b) => a[0].localeCompare(b[0]));
+  const filasTablaEstudio = Object.entries(porEstudio)
+    .sort((a, b) => (b[1]['RECUPERO ULT.MES CERRADO'] || 0) - (a[1]['RECUPERO ULT.MES CERRADO'] || 0));
   document.querySelector('#tabla-empresa-por-estudio tbody').innerHTML = filasTablaEstudio.map(([nombre, v]) => `
     <tr>
       <td>${nombre}</td>
