@@ -192,12 +192,12 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
 /* Variante compacta: ocupa todo el ancho en una sola fila, letra más chica —
    pensada para dejar más lugar arriba para los gráficos. */
 .tarjetas-kpi-compactas {
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
 .tarjetas-kpi-compactas .tarjeta-kpi { padding: 0.55rem 0.7rem; border-left-width: 2px; }
-.tarjetas-kpi-compactas .valor { font-size: 1rem; }
+.tarjetas-kpi-compactas .valor { font-size: 0.92rem; overflow-wrap: break-word; }
 .tarjetas-kpi-compactas .etiqueta { font-size: 0.65rem; }
 
 .pie-vista-resumen {
