@@ -59,27 +59,32 @@
 <div id="app" class="app oculto">
 
   <header class="encabezado">
-    <div class="marca">
-      <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="marca-logo">
-      <div>
-        <strong>GERENCIAR S.R.L.</strong>
-        <span class="marca-sub">Matriz de Recupero</span>
+    <div class="encabezado-izq">
+      <button id="btn-toggle-menu" class="btn-toggle-menu" aria-label="Mostrar/ocultar menú">☰</button>
+      <div class="marca">
+        <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="marca-logo">
+        <div>
+          <strong>GERENCIAR S.R.L.</strong>
+          <span class="marca-sub">Matriz de Recupero</span>
+        </div>
       </div>
     </div>
-    <nav class="pestanas" id="nav-pestanas">
-      <button class="pestana activa" data-vista="resumen">Resumen General</button>
-      <button class="pestana" data-vista="estudio">Por Estudio</button>
-      <button class="pestana" data-vista="empresa">Por Empresa</button>
-      <button class="pestana" data-vista="cargar">Carga Completa</button>
-      <button class="pestana" data-vista="incremental">Carga Mensual</button>
-    </nav>
     <div class="sesion">
       <span id="usuario-email"></span>
       <button id="btn-logout" class="btn-texto">Salir</button>
     </div>
   </header>
 
-  <main>
+  <div class="cuerpo-app">
+    <nav class="menu-lateral" id="nav-pestanas">
+      <button class="pestana activa" data-vista="resumen">Resumen General</button>
+      <button class="pestana" data-vista="empresa">Por Empresa</button>
+      <button class="pestana" data-vista="estudio">Por Estudio</button>
+      <button class="pestana" data-vista="cargar">Carga Completa</button>
+      <button class="pestana" data-vista="incremental">Carga Mensual</button>
+    </nav>
+
+    <main>
     <!-- ---------- VISTA: RESUMEN GENERAL ---------- -->
     <section id="vista-resumen" class="vista">
       <div class="fila-encabezado-vista">
@@ -118,32 +123,12 @@
           </div>
           <canvas id="grafico-seguimiento-nacional-todas"></canvas>
         </div>
-        <div class="tarjeta-grafico">
-          <h3>Recupero del último mes cerrado, por estudio</h3>
-          <canvas id="grafico-barras-estudios"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Judicial vs. extrajudicial (últ. mes)</h3>
-          <canvas id="grafico-torta-jud-extra"></canvas>
-        </div>
       </div>
 
       <div class="grilla-graficos">
         <details class="tarjeta-grafico ancho-completo desplegable" open>
           <summary>Cédulas de sentencia / liquidaciones / embargos — Total (nacional)</summary>
           <canvas id="grafico-pasos-nacional-total"></canvas>
-        </details>
-        <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Cédulas de sentencia / liquidaciones / embargos — CFN (nacional)</summary>
-          <canvas id="grafico-pasos-nacional-cfn"></canvas>
-        </details>
-        <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Cédulas de sentencia / liquidaciones / embargos — Megatone (nacional)</summary>
-          <canvas id="grafico-pasos-nacional-em"></canvas>
-        </details>
-        <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Cédulas de sentencia / liquidaciones / embargos — Confina (nacional)</summary>
-          <canvas id="grafico-pasos-nacional-confina"></canvas>
         </details>
       </div>
 
@@ -158,6 +143,17 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico">
+          <h3>Recupero del último mes cerrado, por estudio</h3>
+          <canvas id="grafico-barras-estudios"></canvas>
+        </div>
+        <div class="tarjeta-grafico">
+          <h3>Judicial vs. extrajudicial (últ. mes)</h3>
+          <canvas id="grafico-torta-jud-extra"></canvas>
+        </div>
       </div>
 
       <div class="pie-vista-resumen">
@@ -182,16 +178,16 @@
           <option value="CONFINA">Confina</option>
         </select>
       </div>
-      <div class="tarjetas-kpi" id="kpis-estudio"></div>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-estudio"></div>
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero mensual — total / judicial / extrajudicial</h3>
+          <h3 id="titulo-grafico-estudio-recupero">Recupero mensual — total / judicial / extrajudicial</h3>
           <canvas id="grafico-estudio-recupero"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del recupero — este estudio</h3>
+            <h3 id="titulo-grafico-seguimiento-estudio">Seguimiento del recupero — este estudio</h3>
             <div class="selector-granularidad" data-objetivo="estudio">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
@@ -199,55 +195,25 @@
           </div>
           <canvas id="grafico-seguimiento-estudio"></canvas>
         </div>
+      </div>
+
+      <div class="tabla-contenedor">
+        <h3>Detalle Empresa</h3>
+        <table id="tabla-estudio-por-empresa">
+          <thead>
+            <tr>
+              <th>Compañía</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento — CFN (este estudio)</h3>
-            <div class="selector-granularidad" data-objetivo="estudio-cfn">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <canvas id="grafico-seguimiento-estudio-cfn"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento — Electrónica Megatone (este estudio)</h3>
-            <div class="selector-granularidad" data-objetivo="estudio-em">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <canvas id="grafico-seguimiento-estudio-em"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento — Confina (este estudio)</h3>
-            <div class="selector-granularidad" data-objetivo="estudio-confina">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <canvas id="grafico-seguimiento-estudio-confina"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Comparativa por compañía (CFN / Megatone / Confina)</h3>
-          <canvas id="grafico-estudio-companias"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Total (este estudio)</h3>
+          <h3>Cédulas de sentencia / liquidaciones / embargos — Total (Empresa)</h3>
           <canvas id="grafico-pasos-estudio-total"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — CFN (este estudio)</h3>
-          <canvas id="grafico-pasos-estudio-cfn"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Megatone (este estudio)</h3>
-          <canvas id="grafico-pasos-estudio-em"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Cédulas de sentencia / liquidaciones / embargos — Confina (este estudio)</h3>
-          <canvas id="grafico-pasos-estudio-confina"></canvas>
         </div>
       </div>
     </section>
@@ -263,7 +229,7 @@
         </select>
       </div>
 
-      <div class="tarjetas-kpi" id="kpis-empresa"></div>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-empresa"></div>
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
@@ -279,6 +245,26 @@
             </div>
           </div>
           <canvas id="grafico-seguimiento-empresa"></canvas>
+        </div>
+      </div>
+
+      <div class="tabla-contenedor">
+        <h3>Detalle por estudio</h3>
+        <table id="tabla-empresa-por-estudio">
+          <thead>
+            <tr>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico ancho-completo">
+          <h3 id="titulo-grafico-pasos-empresa">Cédulas de sentencia / liquidaciones / embargos — CFN</h3>
+          <canvas id="grafico-pasos-empresa"></canvas>
         </div>
       </div>
     </section>
@@ -362,6 +348,7 @@
       </div>
     </section>
   </main>
+  </div>
 </div>
 
 <script src="config.js"></script>
