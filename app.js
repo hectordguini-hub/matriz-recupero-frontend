@@ -82,6 +82,8 @@ function mostrarApp(session) {
   cargarVistaResumen();
   cargarSelectorEstudios();
   cargarVistaEmpresa('CFN');
+  cargarSeguimiento('rd-nacional', 'diario');
+  cargarRecuperoDiarioCompanias('diario');
   cargarLogCargas();
 }
 
@@ -641,6 +643,7 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
 const CONFIG_SEGUIMIENTO = {
   'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
   'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
+  'rd-nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-rd-nacional' },
 };
 const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
 let estudioSeleccionadoActual = null;
@@ -690,6 +693,39 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
     sufijo);
 }
 
+let granularidadRdCompanias = 'diario';
+
+async function cargarRecuperoDiarioCompanias(granularidad) {
+  granularidadRdCompanias = granularidad;
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('recupero_diario')
+    .select('fecha, valor_cfn, cantidad_cfn, valor_em, cantidad_em, valor_confina, cantidad_confina')
+    .order('fecha', { ascending: true }));
+  const agrupado = {};
+  filas.forEach(f => {
+    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+    if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
+    agrupado[clave].cfn += Number(f.valor_cfn || 0);
+    agrupado[clave].em += Number(f.valor_em || 0);
+    agrupado[clave].confina += Number(f.valor_confina || 0);
+    agrupado[clave].fCfn += Number(f.cantidad_cfn || 0);
+    agrupado[clave].fEm += Number(f.cantidad_em || 0);
+    agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
+  });
+  const claves = Object.keys(agrupado).sort();
+  dibujarMultiSeguimiento('grafico-rd-companias', claves,
+    [
+      { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
+      { etiqueta: 'Electrónica Megatone SRL', datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
+      { etiqueta: 'Confina SRL', datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
+    ],
+    [
+      { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
+      { etiqueta: 'Fichas Megatone', datos: claves.map(c => agrupado[c].fEm), color: COLOR_EM },
+      { etiqueta: 'Fichas Confina', datos: claves.map(c => agrupado[c].fConfina), color: COLOR_CONFINA },
+    ]);
+}
+
 function cargarTodosLosSeguimientos(esEstudio, estudioId) {
   Object.keys(CONFIG_SEGUIMIENTO)
     .filter(objetivo => CONFIG_SEGUIMIENTO[objetivo].esEstudio === esEstudio)
@@ -710,6 +746,10 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
     }
     if (objetivo === 'todas') {
       cargarSeguimientoTodasNacional('GENERAL', granularidad);
+      return;
+    }
+    if (objetivo === 'rd-companias') {
+      cargarRecuperoDiarioCompanias(granularidad);
       return;
     }
     if (objetivo === 'estudio') {
@@ -816,6 +856,8 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
         cargarVistaResumen();
         cargarSelectorEstudios();
         cargarVistaEmpresa(companiaSeleccionadaActual);
+        cargarSeguimiento('rd-nacional', granularidadPorObjetivo['rd-nacional'] || 'diario');
+        cargarRecuperoDiarioCompanias(granularidadRdCompanias);
       } else {
         estadoEl.textContent = `Error: ${filaFinal.mensaje}`;
         estadoEl.className = 'mensaje-estado error';
@@ -944,6 +986,40 @@ document.getElementById('form-backfill-compania').addEventListener('submit', asy
   }
 });
 
+document.getElementById('form-recupero-diario').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('rd-estado');
+  const boton = document.getElementById('btn-recupero-diario');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('rd-archivo').files[0]);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-recupero-diario`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el Recupero del día ya está cargado.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 document.getElementById('form-pasos-historico').addEventListener('submit', async (e) => {
   e.preventDefault();
   const estadoEl = document.getElementById('pasos-historico-estado');
@@ -995,6 +1071,8 @@ async function cargarLogCargas() {
   document.querySelector('#tabla-log tbody').innerHTML = filasHtml;
   const tablaIncremental = document.querySelector('#tabla-log-incremental tbody');
   if (tablaIncremental) tablaIncremental.innerHTML = filasHtml;
+  const tablaRecuperoDiario = document.querySelector('#tabla-log-recuperodiario tbody');
+  if (tablaRecuperoDiario) tablaRecuperoDiario.innerHTML = filasHtml;
 }
 
 // ============================================================
