@@ -120,6 +120,7 @@ document.getElementById('nav-pestanas').addEventListener('click', (e) => {
   boton.classList.add('activa');
   document.querySelectorAll('.vista').forEach(v => v.classList.add('oculto'));
   document.getElementById(`vista-${boton.dataset.vista}`).classList.remove('oculto');
+  document.getElementById('nav-pestanas').classList.add('oculto-menu');
 });
 
 document.getElementById('btn-toggle-menu').addEventListener('click', () => {
