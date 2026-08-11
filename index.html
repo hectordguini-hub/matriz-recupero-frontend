@@ -80,6 +80,7 @@
       <button class="pestana activa" data-vista="resumen">Resumen General</button>
       <button class="pestana" data-vista="empresa">Por Empresa</button>
       <button class="pestana" data-vista="estudio">Por Estudio</button>
+      <button class="pestana" data-vista="recuperodiario">Recupero Diario</button>
       <button class="pestana" data-vista="cargar">Carga Completa</button>
       <button class="pestana" data-vista="incremental">Carga Mensual</button>
     </nav>
@@ -96,7 +97,7 @@
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero Mensual — Total Nacional</h3>
+          <h3>Recupero mensual — total nacional</h3>
           <canvas id="grafico-recupero-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
@@ -133,11 +134,11 @@
       </div>
 
       <div class="tabla-contenedor">
-        <h3>Detalle por estudio</h3>
+        <h3>Detalle por Estudio</h3>
         <table id="tabla-base-gral">
           <thead>
             <tr>
-              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>En Gestión</th>
               <th>Iniciadas</th><th>Con Embargo</th><th>Contraparte</th>
             </tr>
           </thead>
@@ -165,7 +166,7 @@
     <!-- ---------- VISTA: POR ESTUDIO ---------- -->
     <section id="vista-estudio" class="vista oculto">
       <div class="fila-encabezado-vista">
-        <h2>Detalle por estudio</h2>
+        <h2>Detalle por Estudio</h2>
         <select id="selector-estudio"></select>
       </div>
 
@@ -215,6 +216,51 @@
           <h3 id="titulo-grafico-pasos-estudio">Cédulas de Sentencia / Liquidaciones / Embargos — Total (Empresa)</h3>
           <canvas id="grafico-pasos-estudio-total"></canvas>
         </div>
+      </div>
+    </section>
+
+    <!-- ---------- VISTA: RECUPERO DIARIO ---------- -->
+    <section id="vista-recuperodiario" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Recupero Diario</h2>
+      </div>
+      <p class="ayuda">Para ir cargando el Recupero día a día sin tocar el resto de la Matriz — al cerrar el mes, se sigue usando "Carga Mensual" como siempre para actualizar Cartera, Pasos Procesales y la foto mensual completa.</p>
+
+      <div class="grilla-graficos">
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Seguimiento del Recupero — Nacional</h3>
+            <div class="selector-granularidad" data-objetivo="rd-nacional">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <canvas id="grafico-rd-nacional"></canvas>
+        </div>
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Recupero Diario — Por Compañía</h3>
+            <div class="selector-granularidad" data-objetivo="rd-companias">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <canvas id="grafico-rd-companias"></canvas>
+        </div>
+      </div>
+
+      <form id="form-recupero-diario" class="tarjeta-carga">
+        <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
+        <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
+        <p id="rd-estado" class="mensaje-estado"></p>
+      </form>
+
+      <div class="tabla-contenedor">
+        <h3>Historial de cargas</h3>
+        <table id="tabla-log-recuperodiario">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
 
