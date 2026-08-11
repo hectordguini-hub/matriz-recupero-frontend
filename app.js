@@ -122,6 +122,10 @@ document.getElementById('nav-pestanas').addEventListener('click', (e) => {
   document.getElementById(`vista-${boton.dataset.vista}`).classList.remove('oculto');
 });
 
+document.getElementById('btn-toggle-menu').addEventListener('click', () => {
+  document.getElementById('nav-pestanas').classList.toggle('oculto-menu');
+});
+
 // ============================================================
 // VISTA: RESUMEN GENERAL
 // ============================================================
@@ -408,35 +412,101 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
 }
 
 document.getElementById('selector-compania-estudio').addEventListener('change', (e) => {
-  if (estudioSeleccionadoActual) cargarKpisEstudio(estudioSeleccionadoActual, e.target.value);
+  if (estudioSeleccionadoActual) {
+    cargarKpisEstudio(estudioSeleccionadoActual, e.target.value);
+    cargarGraficosEstudio(estudioSeleccionadoActual, e.target.value);
+  }
 });
+
+async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
+  const tituloRecupero = document.getElementById('titulo-grafico-estudio-recupero');
+  const tituloSeguimiento = document.getElementById('titulo-grafico-seguimiento-estudio');
+
+  if (companiaSeleccionada === 'GENERAL') {
+    tituloRecupero.textContent = 'Recupero mensual — total / judicial / extrajudicial';
+    tituloSeguimiento.textContent = 'Seguimiento del recupero — este estudio';
+
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
+      .order('mes', { ascending: true }));
+    const meses = [...new Set(filas.map(f => f.mes))].sort();
+    const porParametro = (param) => meses.map(m => Number((filas.find(f => f.mes === m && f.parametro === param) || {}).valor || 0));
+    dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
+      porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
+      porParametro('CAUSAS CON PAGOS JUD.'), porParametro('CAUSAS CON PAGOS EXT.'));
+
+    cargarSeguimiento('estudio', granularidadPorObjetivo['estudio'] || 'diario', estudioId);
+  } else {
+    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
+    tituloRecupero.textContent = `Recupero mensual — ${nombreCia} (este estudio)`;
+    tituloSeguimiento.textContent = `Seguimiento del recupero — ${nombreCia} (este estudio)`;
+
+    const filas = await consultarPaginado(() => supabaseClient
+      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
+      .in('parametro', [`RECUPERO ${companiaSeleccionada} JUD.`, `RECUPERO ${companiaSeleccionada} EXT.`, `CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
+      .order('mes', { ascending: true }));
+    const sumarPorMes = (parametro) => {
+      const acc = {};
+      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
+      return acc;
+    };
+    const meses = [...new Set(filas.map(f => f.mes))].sort();
+    const porJud = sumarPorMes(`RECUPERO ${companiaSeleccionada} JUD.`), porExt = sumarPorMes(`RECUPERO ${companiaSeleccionada} EXT.`);
+    const fichasJud = sumarPorMes(`CCP ${companiaSeleccionada} JUD.`), fichasExt = sumarPorMes(`CCP ${companiaSeleccionada} EXT.`);
+    dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
+      meses.map(m => porJud[m] || 0), meses.map(m => porExt[m] || 0),
+      meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
+
+    const granularidad = granularidadPorObjetivo['estudio'] || 'diario';
+    const filasDiario = await consultarPaginado(() => supabaseClient
+      .from('recupero_diario_detalle').select('fecha, tipo, valor, cantidad_fichas')
+      .eq('compania', companiaSeleccionada).eq('estudio_id', estudioId).order('fecha', { ascending: true }));
+    const agrupado = {};
+    filasDiario.forEach(f => {
+      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+      if (f.tipo === 'JUDICIAL') { agrupado[clave].judicial += Number(f.valor || 0); agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0); }
+      else if (f.tipo === 'EXTRAJUDICIAL') { agrupado[clave].extrajudicial += Number(f.valor || 0); agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0); }
+    });
+    const clavesDiario = Object.keys(agrupado).sort();
+    const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+    dibujarSeguimientoJudExtra('grafico-seguimiento-estudio', clavesDiario,
+      clavesDiario.map(c => agrupado[c].judicial), clavesDiario.map(c => agrupado[c].extrajudicial),
+      clavesDiario.map(c => agrupado[c].fichasJudicial), clavesDiario.map(c => agrupado[c].fichasExtrajudicial), sufijo);
+  }
+}
 
 async function cargarVistaEstudio(estudioId) {
   estudioSeleccionadoActual = estudioId;
-  cargarKpisEstudio(estudioId, document.getElementById('selector-compania-estudio').value);
+  const companiaElegida = document.getElementById('selector-compania-estudio').value;
+  cargarKpisEstudio(estudioId, companiaElegida);
+  cargarGraficosEstudio(estudioId, companiaElegida);
 
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('matriz_mensual')
-    .select('mes, parametro, valor')
-    .eq('estudio_id', estudioId)
-    .order('mes', { ascending: true })
-  );
-  if (!filas) return;
+  // ---- Detalle Empresa: comparación fija CFN/Megatone/Confina para este estudio ----
+  const { data: baseEmpresa } = await supabaseClient
+    .from('base_gral_por_estudio_compania')
+    .select('compania, parametro, valor')
+    .eq('estudio_id', estudioId);
+  const porCompania = {};
+  (baseEmpresa || []).forEach(f => {
+    porCompania[f.compania] = porCompania[f.compania] || {};
+    porCompania[f.compania][f.parametro] = Number(f.valor);
+  });
+  const nombresCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
+  document.querySelector('#tabla-estudio-por-empresa tbody').innerHTML = ['CFN', 'EM', 'CONFINA'].map(cia => {
+    const v = porCompania[cia] || {};
+    return `<tr>
+      <td>${nombresCia[cia]}</td>
+      <td class="numero">${formateadorMoneda.format(v['RECUPERO ULT.MES CERRADO'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['EN GESTIÓN'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['INICIADAS'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['CON EMBARGO HABERES'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['CONTRAPARTE'] || 0)}</td>
+    </tr>`;
+  }).join('');
 
-  const meses = [...new Set(filas.map(f => f.mes))].sort();
-  const porParametro = (param) => meses.map(m => Number((filas.find(f => f.mes === m && f.parametro === param) || {}).valor || 0));
-
-  dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
-    porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
-    porParametro('CAUSAS CON PAGOS JUD.'), porParametro('CAUSAS CON PAGOS EXT.'));
-
-  const ultimoMes = meses[meses.length - 1];
-  const valorEn = (param) => Number((filas.find(f => f.mes === ultimoMes && f.parametro === param) || {}).valor || 0);
-  dibujarBarras('grafico-estudio-companias', ['CFN', 'Megatone', 'Confina'],
-    [valorEn('RECUPERO CFN'), valorEn('RECUPERO EM'), valorEn('RECUPERO CONFINA')], COLOR_BRONCE);
-
-  cargarTodosLosSeguimientos(true, estudioId);
-  cargarTodosLosPasosDetalle(true, estudioId);
+  // ---- Cédulas de sentencia/liquidaciones/embargos — Total (Empresa), fijo ----
+  cargarPasosDinamico('grafico-pasos-estudio-total', 'TOTAL', estudioId);
 }
 
 // ============================================================
@@ -492,6 +562,33 @@ async function cargarVistaEmpresa(compania) {
     meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExt[m] || 0));
 
   cargarSeguimientoEmpresa(compania, granularidadEmpresa);
+
+  // ---- Detalle por estudio (para esta compañía) ----
+  const { data: baseEstCompania } = await supabaseClient
+    .from('base_gral_por_estudio_compania')
+    .select('parametro, valor, estudios(nombre)')
+    .eq('compania', compania);
+  const porEstudio = {};
+  (baseEstCompania || []).forEach(f => {
+    const nombre = f.estudios.nombre;
+    porEstudio[nombre] = porEstudio[nombre] || {};
+    porEstudio[nombre][f.parametro] = Number(f.valor);
+  });
+  const filasTablaEstudio = Object.entries(porEstudio).sort((a, b) => a[0].localeCompare(b[0]));
+  document.querySelector('#tabla-empresa-por-estudio tbody').innerHTML = filasTablaEstudio.map(([nombre, v]) => `
+    <tr>
+      <td>${nombre}</td>
+      <td class="numero">${formateadorMoneda.format(v['RECUPERO ULT.MES CERRADO'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['EN GESTIÓN'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['INICIADAS'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['CON EMBARGO HABERES'] || 0)}</td>
+      <td class="numero">${formateadorNumero.format(v['CONTRAPARTE'] || 0)}</td>
+    </tr>`).join('');
+
+  // ---- Cédulas de sentencia / liquidaciones / embargos (para esta compañía) ----
+  const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[compania];
+  document.getElementById('titulo-grafico-pasos-empresa').textContent = `Cédulas de sentencia / liquidaciones / embargos — ${nombreCia}`;
+  cargarPasosDinamico('grafico-pasos-empresa', compania, null);
 }
 
 async function cargarSeguimientoEmpresa(compania, granularidad) {
@@ -533,9 +630,6 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
 const CONFIG_SEGUIMIENTO = {
   'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
   'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
-  'estudio-cfn': { compania: 'CFN', esEstudio: true, canvas: 'grafico-seguimiento-estudio-cfn' },
-  'estudio-em': { compania: 'EM', esEstudio: true, canvas: 'grafico-seguimiento-estudio-em' },
-  'estudio-confina': { compania: 'CONFINA', esEstudio: true, canvas: 'grafico-seguimiento-estudio-confina' },
 };
 const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
 let estudioSeleccionadoActual = null;
@@ -607,6 +701,16 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
       cargarSeguimientoTodasNacional('GENERAL', granularidad);
       return;
     }
+    if (objetivo === 'estudio') {
+      granularidadPorObjetivo['estudio'] = granularidad;
+      const companiaElegida = document.getElementById('selector-compania-estudio').value;
+      if (companiaElegida === 'GENERAL') {
+        cargarSeguimiento('estudio', granularidad, estudioSeleccionadoActual);
+      } else {
+        cargarGraficosEstudio(estudioSeleccionadoActual, companiaElegida);
+      }
+      return;
+    }
     const config = CONFIG_SEGUIMIENTO[objetivo];
     cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
   });
@@ -619,14 +723,32 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
 // ============================================================
 const CONFIG_PASOS_DETALLE = {
   'nacional-total': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-pasos-nacional-total' },
-  'nacional-cfn': { compania: 'CFN', esEstudio: false, canvas: 'grafico-pasos-nacional-cfn' },
-  'nacional-em': { compania: 'EM', esEstudio: false, canvas: 'grafico-pasos-nacional-em' },
-  'nacional-confina': { compania: 'CONFINA', esEstudio: false, canvas: 'grafico-pasos-nacional-confina' },
-  'estudio-total': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-pasos-estudio-total' },
-  'estudio-cfn': { compania: 'CFN', esEstudio: true, canvas: 'grafico-pasos-estudio-cfn' },
-  'estudio-em': { compania: 'EM', esEstudio: true, canvas: 'grafico-pasos-estudio-em' },
-  'estudio-confina': { compania: 'CONFINA', esEstudio: true, canvas: 'grafico-pasos-estudio-confina' },
 };
+
+// Gráfico de pasos procesales DINÁMICO: se usa tanto en "Por Empresa" (según
+// la compañía elegida, a nivel nacional) como en "Por Estudio" (según la
+// compañía elegida, para el estudio seleccionado) — reemplaza a los 3+4
+// gráficos fijos que había antes por compañía.
+async function cargarPasosDinamico(idCanvas, compania, estudioId) {
+  const filas = await consultarPaginado(() => {
+    let q = supabaseClient.from('pasos_mensual_detalle')
+      .select('mes, metrica, cantidad_fichas')
+      .eq('compania', compania)
+      .order('mes', { ascending: true });
+    if (estudioId) q = q.eq('estudio_id', estudioId);
+    return q;
+  });
+  const agrupado = {};
+  filas.forEach(f => {
+    if (!agrupado[f.mes]) agrupado[f.mes] = { sentencia: 0, liquidacion: 0, embargo: 0 };
+    if (f.metrica === 'SENTENCIA') agrupado[f.mes].sentencia += Number(f.cantidad_fichas || 0);
+    else if (f.metrica === 'LIQUIDACION') agrupado[f.mes].liquidacion += Number(f.cantidad_fichas || 0);
+    else if (f.metrica === 'EMBARGO') agrupado[f.mes].embargo += Number(f.cantidad_fichas || 0);
+  });
+  const meses = Object.keys(agrupado).sort();
+  dibujarPasosPorMes(idCanvas, meses,
+    meses.map(m => agrupado[m].sentencia), meses.map(m => agrupado[m].liquidacion), meses.map(m => agrupado[m].embargo));
+}
 
 async function cargarPasosDetalle(objetivo, estudioId) {
   const config = CONFIG_PASOS_DETALLE[objetivo];
