@@ -192,13 +192,19 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
 /* Variante compacta: ocupa todo el ancho en una sola fila, letra más chica —
    pensada para dejar más lugar arriba para los gráficos. */
 .tarjetas-kpi-compactas {
-  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
-  gap: 0.5rem;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
   margin-bottom: 1rem;
 }
-.tarjetas-kpi-compactas .tarjeta-kpi { padding: 0.55rem 0.6rem; border-left-width: 2px; }
-.tarjetas-kpi-compactas .valor { font-size: 0.85rem; overflow-wrap: break-word; }
-.tarjetas-kpi-compactas .etiqueta { font-size: 0.62rem; }
+.tarjetas-kpi-compactas .tarjeta-kpi {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.5rem 0.5rem;
+  border-left-width: 2px;
+}
+.tarjetas-kpi-compactas .valor { font-size: clamp(0.68rem, 1.6vw, 0.85rem); overflow-wrap: break-word; white-space: normal; }
+.tarjetas-kpi-compactas .etiqueta { font-size: clamp(0.52rem, 1vw, 0.62rem); }
 
 .pie-vista-resumen {
   display: flex; align-items: center; justify-content: space-between;
