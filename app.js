@@ -415,6 +415,7 @@ document.getElementById('selector-compania-estudio').addEventListener('change', 
   if (estudioSeleccionadoActual) {
     cargarKpisEstudio(estudioSeleccionadoActual, e.target.value);
     cargarGraficosEstudio(estudioSeleccionadoActual, e.target.value);
+    cargarPasosEstudio(estudioSeleccionadoActual, e.target.value);
   }
 });
 
@@ -505,8 +506,16 @@ async function cargarVistaEstudio(estudioId) {
     </tr>`;
   }).join('');
 
-  // ---- Cédulas de sentencia/liquidaciones/embargos — Total (Empresa), fijo ----
-  cargarPasosDinamico('grafico-pasos-estudio-total', 'TOTAL', estudioId);
+  // ---- Cédulas de sentencia/liquidaciones/embargos — según la compañía elegida ----
+  cargarPasosEstudio(estudioId, companiaElegida);
+}
+
+function cargarPasosEstudio(estudioId, companiaSeleccionada) {
+  const compania = companiaSeleccionada === 'GENERAL' ? 'TOTAL' : companiaSeleccionada;
+  const nombresCia = { TOTAL: 'Total', CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
+  document.getElementById('titulo-grafico-pasos-estudio').textContent =
+    `Cédulas de sentencia / liquidaciones / embargos — ${nombresCia[compania]} (Empresa)`;
+  cargarPasosDinamico('grafico-pasos-estudio-total', compania, estudioId);
 }
 
 // ============================================================
