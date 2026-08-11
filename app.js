@@ -242,7 +242,7 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'Causas en gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
     { etiqueta: 'Causas iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
-    { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
+    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
   ];
   document.getElementById('kpis-generales').innerHTML = kpis.map(k => `
     <div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
@@ -407,7 +407,7 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
     { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
-    { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
+    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorFn('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
 }
@@ -563,7 +563,7 @@ async function cargarVistaEmpresa(compania) {
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
     { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorBase('INICIADAS')) },
-    { etiqueta: 'Con embargo de haberes', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
+    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
 
@@ -1232,7 +1232,7 @@ document.getElementById('btn-exportar-pdf').addEventListener('click', async () =
       ['Recupero últ. mes (nacional)', formateadorMoneda.format(suma('RECUPERO ULT.MES CERRADO'))],
       ['Causas en gestión', formateadorNumero.format(suma('EN GESTIÓN'))],
       ['Causas iniciadas', formateadorNumero.format(suma('INICIADAS'))],
-      ['Con embargo de haberes', formateadorNumero.format(suma('CON EMBARGO HABERES'))],
+      ['Con embargo', formateadorNumero.format(suma('CON EMBARGO HABERES'))],
     ].forEach(([etq, val]) => { doc.text(`${etq}: ${val}`, margen, y); y += 16; });
 
     const porMesNacional = {};
@@ -1301,7 +1301,7 @@ document.getElementById('btn-exportar-pdf').addEventListener('click', async () =
       doc.setFontSize(10);
       [
         ['En gestión', datosBase['EN GESTIÓN']], ['Iniciadas', datosBase['INICIADAS']],
-        ['Con embargo de haberes', datosBase['CON EMBARGO HABERES']], ['Contraparte', datosBase['CONTRAPARTE']],
+        ['Con embargo', datosBase['CON EMBARGO HABERES']], ['Contraparte', datosBase['CONTRAPARTE']],
         ['5 años sin pagos', datosBase['5 AÑOS SIN PAGOS']],
       ].forEach(([etq, val]) => {
         doc.text(`${etq}: ${formateadorNumero.format(val || 0)}`, margen, yEst);
