@@ -162,6 +162,30 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
 }
 .chip-granularidad + .chip-granularidad { border-left: 1px solid var(--linea); }
 .chip-granularidad.activa { background: var(--tinta); color: #fff; }
+
+.controles-grafico { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.selector-dia {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.78rem; color: var(--texto-tenue);
+}
+.selector-dia select {
+  font-family: 'Fira Sans', sans-serif; font-size: 0.8rem; padding: 0.3rem 0.4rem;
+  border: 1px solid var(--linea); border-radius: var(--radio); background: #fff; color: var(--tinta);
+}
+.checkboxes-series {
+  display: flex; align-items: center; gap: 0.7rem;
+  font-size: 0.8rem; color: var(--texto-tenue);
+}
+.checkboxes-series label { display: flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+
+/* Barra de scroll horizontal para gráficos con muchos meses/días: el canvas
+   se dibuja con un ancho fijo (calculado según la cantidad de puntos) dentro
+   de un contenedor angosto — el navegador muestra su propia barra de scroll
+   para recorrerlo. */
+.grafico-scroll-x { overflow-x: auto; overflow-y: hidden; padding-bottom: 0.4rem; }
+.grafico-scroll-x-interior { height: 320px; }
+.fila-mes-actual { background: rgba(202, 1, 48, 0.07); font-weight: 600; }
+
 .btn-secundario {
   background: #fff; color: var(--tinta); border: 1px solid var(--linea);
   border-radius: var(--radio); padding: 0.5rem 0.9rem; font-family: 'Fira Sans', sans-serif;
