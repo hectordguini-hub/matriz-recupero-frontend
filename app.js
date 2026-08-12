@@ -315,12 +315,10 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
 
   if (companiaSeleccionada === 'GENERAL') {
     tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('recupero_diario')
-      .select('fecha, valor_cfn, cantidad_cfn, valor_em, cantidad_em, valor_confina, cantidad_confina')
-      .order('fecha', { ascending: true }));
+    const { data: filas, error } = await supabaseClient.rpc('recupero_diario_por_compania_nacional');
+    if (error) { console.error(error); return; }
     const agrupado = {};
-    filas.forEach(f => {
+    (filas || []).forEach(f => {
       const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
       if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
       agrupado[clave].cfn += Number(f.valor_cfn || 0);
@@ -468,11 +466,13 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
       meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
 
     const granularidad = granularidadPorObjetivo['estudio'] || 'diario';
-    const filasDiario = await consultarPaginado(() => supabaseClient
-      .from('recupero_diario_detalle').select('fecha, tipo, valor, cantidad_fichas')
-      .eq('compania', companiaSeleccionada).eq('estudio_id', estudioId).order('fecha', { ascending: true }));
+    const { data: filasDiario, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+      compania_filtro: companiaSeleccionada,
+      estudio_id_filtro: estudioId,
+    });
+    if (error) { console.error(error); return; }
     const agrupado = {};
-    filasDiario.forEach(f => {
+    (filasDiario || []).forEach(f => {
       const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
       if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
       if (f.tipo === 'JUDICIAL') { agrupado[clave].judicial += Number(f.valor || 0); agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0); }
@@ -613,15 +613,14 @@ async function cargarVistaEmpresa(compania) {
 
 async function cargarSeguimientoEmpresa(compania, granularidad) {
   granularidadEmpresa = granularidad;
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('recupero_diario_detalle')
-    .select('fecha, tipo, valor, cantidad_fichas')
-    .eq('compania', compania)
-    .order('fecha', { ascending: true })
-  );
+  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+    compania_filtro: compania,
+    estudio_id_filtro: null,
+  });
+  if (error) { console.error(error); return; }
 
   const agrupado = {};
-  filas.forEach(f => {
+  (filas || []).forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
     if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
     if (f.tipo === 'JUDICIAL') {
@@ -713,17 +712,14 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   granularidadPorObjetivo[objetivo] = granularidad;
   if (config.esEstudio && !estudioId) return; // todavía no hay estudio elegido
 
-  const filas = await consultarPaginado(() => {
-    let q = supabaseClient.from('recupero_diario_detalle')
-      .select('fecha, tipo, valor, cantidad_fichas')
-      .eq('compania', config.compania)
-      .order('fecha', { ascending: true });
-    if (config.esEstudio) q = q.eq('estudio_id', estudioId);
-    return q;
+  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+    compania_filtro: config.compania,
+    estudio_id_filtro: config.esEstudio ? estudioId : null,
   });
+  if (error) { console.error(error); return; }
 
   const agrupado = {};
-  filas.forEach(f => {
+  (filas || []).forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
     if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
     if (f.tipo === 'JUDICIAL') {
@@ -747,12 +743,10 @@ let granularidadRdCompanias = 'diario';
 
 async function cargarRecuperoDiarioCompanias(granularidad) {
   granularidadRdCompanias = granularidad;
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('recupero_diario')
-    .select('fecha, valor_cfn, cantidad_cfn, valor_em, cantidad_em, valor_confina, cantidad_confina')
-    .order('fecha', { ascending: true }));
+  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_por_compania_nacional');
+  if (error) { console.error(error); return; }
   const agrupado = {};
-  filas.forEach(f => {
+  (filas || []).forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
     if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
     agrupado[clave].cfn += Number(f.valor_cfn || 0);
@@ -786,20 +780,20 @@ let diaRdNacional = '';
 async function cargarRdNacional(granularidad, dia) {
   granularidadRdNacional = granularidad;
   diaRdNacional = dia;
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('recupero_diario_detalle')
-    .select('fecha, tipo, valor, cantidad_fichas')
-    .eq('compania', 'TOTAL')
-    .order('fecha', { ascending: true }));
+  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+    compania_filtro: 'TOTAL',
+    estudio_id_filtro: null,
+  });
+  if (error) { console.error(error); return; }
 
   let claves, agrupado, sufijo;
   if (dia) {
-    const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
     agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
     claves = Object.keys(agrupado).sort();
     sufijo = ` (día ${dia})`;
   } else {
-    agrupado = agruparJudExtraPorClave(filas, f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
+    agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
     claves = Object.keys(agrupado).sort();
     sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
   }
@@ -818,20 +812,20 @@ async function cargarRdDetalle() {
   const dia = document.getElementById('rd-detalle-dia').value;
   const granularidad = document.querySelector('.selector-granularidad[data-objetivo="rd-detalle"] .chip-granularidad.activa').dataset.granularidad;
 
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('recupero_diario_detalle')
-    .select('fecha, tipo, valor, cantidad_fichas')
-    .eq('compania', companiaReal)
-    .order('fecha', { ascending: true }));
+  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+    compania_filtro: companiaReal,
+    estudio_id_filtro: null,
+  });
+  if (error) { console.error(error); return; }
 
   let claves, agrupado, sufijo;
   if (dia) {
-    const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
     agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
     claves = Object.keys(agrupado).sort();
     sufijo = ` (día ${dia})`;
   } else {
-    agrupado = agruparJudExtraPorClave(filas, f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
+    agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
     claves = Object.keys(agrupado).sort();
     sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
   }
@@ -875,21 +869,14 @@ async function cargarRdAcumuladoMes() {
 
   const hoy = new Date();
   const diaHoy = hoy.getDate();
-  const companiasNecesarias = columnas.map(c => c.compania);
 
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('recupero_diario_detalle')
-    .select('fecha, compania, valor')
-    .in('compania', companiasNecesarias)
-    .order('fecha', { ascending: true }));
+  const { data: filas, error } = await supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy });
+  if (error) { console.error(error); return; }
 
-  // Comparativo "mes a la fecha": solo los días 1 al día de hoy, de cada mes.
-  const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) <= diaHoy);
   const acumulado = {};
-  filtradas.forEach(f => {
-    const mes = f.fecha.slice(0, 7);
-    if (!acumulado[mes]) acumulado[mes] = {};
-    acumulado[mes][f.compania] = (acumulado[mes][f.compania] || 0) + Number(f.valor || 0);
+  (filas || []).forEach(f => {
+    if (!acumulado[f.mes]) acumulado[f.mes] = {};
+    acumulado[f.mes][f.compania] = Number(f.valor || 0);
   });
 
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
