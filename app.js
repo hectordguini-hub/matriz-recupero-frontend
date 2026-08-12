@@ -331,6 +331,7 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
       agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
     });
     const claves = Object.keys(agrupado).sort();
+    ajustarAnchoScroll('scroll-grafico-seguimiento-nacional-todas', claves.length);
     dibujarMultiSeguimiento('grafico-seguimiento-nacional-todas', claves,
       [
         { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
@@ -364,6 +365,7 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
     });
     const claves = Object.keys(agrupado).sort();
     const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+    ajustarAnchoScroll('scroll-grafico-seguimiento-nacional-todas', claves.length);
     dibujarSeguimientoJudExtra('grafico-seguimiento-nacional-todas', claves,
       claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
       claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
@@ -478,6 +480,7 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
     });
     const clavesDiario = Object.keys(agrupado).sort();
     const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+    ajustarAnchoScroll('scroll-grafico-seguimiento-estudio', clavesDiario.length);
     dibujarSeguimientoJudExtra('grafico-seguimiento-estudio', clavesDiario,
       clavesDiario.map(c => agrupado[c].judicial), clavesDiario.map(c => agrupado[c].extrajudicial),
       clavesDiario.map(c => agrupado[c].fichasJudicial), clavesDiario.map(c => agrupado[c].fichasExtrajudicial), sufijo);
@@ -631,6 +634,7 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
   });
   const claves = Object.keys(agrupado).sort();
   const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  ajustarAnchoScroll('scroll-grafico-seguimiento-empresa', claves.length);
   dibujarSeguimientoJudExtra('grafico-seguimiento-empresa', claves,
     claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
     claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
@@ -732,6 +736,7 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   });
   const claves = Object.keys(agrupado).sort();
   const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  ajustarAnchoScroll('scroll-' + config.canvas, claves.length);
   dibujarSeguimientoJudExtra(config.canvas, claves,
     claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
     claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
@@ -1364,6 +1369,7 @@ function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudi
       responsive: true,
       plugins: { legend: { display: true } },
       scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 50, maxRotation: 60, minRotation: 45 } },
         y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
         y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
       },
@@ -1395,6 +1401,7 @@ function dibujarMultiSeguimiento(id, etiquetas, lineas, barras) {
       responsive: true,
       plugins: { legend: { display: true } },
       scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 50, maxRotation: 60, minRotation: 45 } },
         y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
         y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
       },
