@@ -677,15 +677,15 @@ function obtenerFechaDesdeSelector(objetivo) {
   return fecha.toISOString().slice(0, 10);
 }
 
-// Ajusta el ancho del contenedor interior de un gráfico según la cantidad de
-// puntos, para que aparezca una barra de scroll horizontal cuando hay muchos
-// meses/días — en vez de apretar todo en el ancho fijo de la pantalla.
+// Antes esta función agrandaba el contenedor del gráfico según la cantidad
+// de puntos, para que apareciera un scroll horizontal. Ahora que los
+// gráficos diario/semanal están acotados por el selector de rango (6 meses
+// o 1 año como máximo), ya no hace falta — el gráfico ocupa todo el
+// recuadro disponible, como antes de tener años de historial cargados. Se
+// deja la función (sin hacer nada) para no tener que tocar los ~10 lugares
+// que la llaman.
 function ajustarAnchoScroll(idContenedorScroll, cantidadPuntos, pxPorPunto = 42, minimo = 600) {
-  const contenedor = document.getElementById(idContenedorScroll);
-  if (!contenedor) return;
-  const interior = contenedor.querySelector('.grafico-scroll-x-interior');
-  if (!interior) return;
-  interior.style.width = Math.max(minimo, cantidadPuntos * pxPorPunto) + 'px';
+  // no-op a propósito
 }
 
 // Agrupa filas de recupero_diario_detalle por una clave (día/semana/mes según
