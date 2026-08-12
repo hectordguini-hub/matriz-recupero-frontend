@@ -889,7 +889,8 @@ async function cargarRdAcumuladoMes() {
   const hoy = new Date();
   const diaHoy = hoy.getDate();
 
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy }));
+  const mesesAtras = Number(document.querySelector('.selector-rango[data-objetivo="rd-acumulado"]')?.value) || 6;
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy, meses_atras: mesesAtras }));
 
   // acumulado[mes][compania][tipo] = valor ('combinado' = judicial + extrajudicial)
   const acumulado = {};
@@ -913,7 +914,7 @@ async function cargarRdAcumuladoMes() {
   })));
 
   document.getElementById('rd-acumulado-encabezado').innerHTML =
-    '<th>Mes</th>' + columnas.map(c => `<th>${c.etiqueta}</th>`).join('');
+    '<th>Mes</th>' + columnas.map(c => `<th class="numero">${c.etiqueta}</th>`).join('');
 
   document.querySelector('#tabla-rd-acumulado tbody').innerHTML = mesesOrdenados.map(mes => {
     const [anio, mesNum] = mes.split('-');
@@ -949,6 +950,10 @@ function cargarTodosLosSeguimientos(esEstudio, estudioId) {
 // granularidad actual — se usa tanto al cambiar Diario/Semanal como al
 // cambiar el selector de rango (6 meses / 1 año).
 function recargarGraficoPorObjetivo(objetivo, granularidad) {
+  if (objetivo === 'rd-acumulado') {
+    cargarRdAcumuladoMes();
+    return;
+  }
   if (objetivo === 'empresa') {
     cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
     return;
