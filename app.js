@@ -871,7 +871,7 @@ async function cargarRdAcumuladoMes() {
   const columnasCompania = [
     { valor: 'total', etiqueta: 'Total', compania: 'TOTAL' },
     { valor: 'CFN', etiqueta: 'CFN', compania: 'CFN' },
-    { valor: 'EM', etiqueta: 'Electrónica Megatone', compania: 'EM' },
+    { valor: 'EM', etiqueta: 'EMSRL', compania: 'EM' },
     { valor: 'CONFINA', etiqueta: 'Confina', compania: 'CONFINA' },
   ].filter(c => companiasElegidas.includes(c.valor));
   const columnasTipo = [
@@ -915,6 +915,9 @@ async function cargarRdAcumuladoMes() {
 
   document.getElementById('rd-acumulado-encabezado').innerHTML =
     '<th>Mes</th>' + columnas.map(c => `<th class="numero">${c.etiqueta}</th>`).join('');
+
+  const tabla = document.getElementById('tabla-rd-acumulado');
+  tabla.style.minWidth = (140 + columnas.length * 110) + 'px';
 
   document.querySelector('#tabla-rd-acumulado tbody').innerHTML = mesesOrdenados.map(mes => {
     const [anio, mesNum] = mes.split('-');
