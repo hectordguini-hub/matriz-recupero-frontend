@@ -82,8 +82,12 @@ function mostrarApp(session) {
   cargarVistaResumen();
   cargarSelectorEstudios();
   cargarVistaEmpresa('CFN');
-  cargarSeguimiento('rd-nacional', 'diario');
+  llenarSelectorDeDias('rd-nacional-dia');
+  llenarSelectorDeDias('rd-detalle-dia');
+  cargarRdNacional('diario', '');
   cargarRecuperoDiarioCompanias('diario');
+  cargarRdDetalle();
+  cargarRdAcumuladoMes();
   cargarLogCargas();
 }
 
@@ -643,7 +647,6 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
 const CONFIG_SEGUIMIENTO = {
   'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
   'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
-  'rd-nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-rd-nacional' },
 };
 const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
 let estudioSeleccionadoActual = null;
@@ -656,6 +659,48 @@ function claveDeSemana(fechaIso) {
   const diaSemana = d.getDay() || 7; // domingo=0 -> tratarlo como 7
   d.setDate(d.getDate() - diaSemana + 1); // lunes de esa semana
   return d.toISOString().slice(0, 10);
+}
+
+// Ajusta el ancho del contenedor interior de un gráfico según la cantidad de
+// puntos, para que aparezca una barra de scroll horizontal cuando hay muchos
+// meses/días — en vez de apretar todo en el ancho fijo de la pantalla.
+function ajustarAnchoScroll(idContenedorScroll, cantidadPuntos, pxPorPunto = 42, minimo = 600) {
+  const contenedor = document.getElementById(idContenedorScroll);
+  if (!contenedor) return;
+  const interior = contenedor.querySelector('.grafico-scroll-x-interior');
+  if (!interior) return;
+  interior.style.width = Math.max(minimo, cantidadPuntos * pxPorPunto) + 'px';
+}
+
+// Agrupa filas de recupero_diario_detalle por una clave (día/semana/mes según
+// corresponda), sumando judicial/extrajudicial y sus fichas.
+function agruparJudExtraPorClave(filas, obtenerClave) {
+  const agrupado = {};
+  filas.forEach(f => {
+    const clave = obtenerClave(f);
+    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+    if (f.tipo === 'JUDICIAL') {
+      agrupado[clave].judicial += Number(f.valor || 0);
+      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
+    } else if (f.tipo === 'EXTRAJUDICIAL') {
+      agrupado[clave].extrajudicial += Number(f.valor || 0);
+      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
+    }
+  });
+  return agrupado;
+}
+
+// Llena un <select> de "día del mes" con las opciones 1 a 31.
+function llenarSelectorDeDias(idSelect) {
+  const select = document.getElementById(idSelect);
+  if (!select || select.dataset.lleno) return;
+  for (let dia = 1; dia <= 31; dia++) {
+    const opcion = document.createElement('option');
+    opcion.value = String(dia);
+    opcion.textContent = `Día ${dia}`;
+    select.appendChild(opcion);
+  }
+  select.dataset.lleno = '1';
 }
 
 async function cargarSeguimiento(objetivo, granularidad, estudioId) {
@@ -713,18 +758,160 @@ async function cargarRecuperoDiarioCompanias(granularidad) {
     agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
   });
   const claves = Object.keys(agrupado).sort();
+  ajustarAnchoScroll('scroll-grafico-rd-companias', claves.length);
   dibujarMultiSeguimiento('grafico-rd-companias', claves,
     [
+      { etiqueta: 'Total', datos: claves.map(c => agrupado[c].cfn + agrupado[c].em + agrupado[c].confina), color: COLOR_BRONCE },
       { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
       { etiqueta: 'Electrónica Megatone SRL', datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
       { etiqueta: 'Confina SRL', datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
     ],
     [
+      { etiqueta: 'Fichas total', datos: claves.map(c => agrupado[c].fCfn + agrupado[c].fEm + agrupado[c].fConfina), color: COLOR_BRONCE },
       { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
       { etiqueta: 'Fichas Megatone', datos: claves.map(c => agrupado[c].fEm), color: COLOR_EM },
       { etiqueta: 'Fichas Confina', datos: claves.map(c => agrupado[c].fConfina), color: COLOR_CONFINA },
     ]);
 }
+
+// ---- Seguimiento del Recupero — Nacional (con modo "comparar día") ----
+let granularidadRdNacional = 'diario';
+let diaRdNacional = '';
+
+async function cargarRdNacional(granularidad, dia) {
+  granularidadRdNacional = granularidad;
+  diaRdNacional = dia;
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('recupero_diario_detalle')
+    .select('fecha, tipo, valor, cantidad_fichas')
+    .eq('compania', 'TOTAL')
+    .order('fecha', { ascending: true }));
+
+  let claves, agrupado, sufijo;
+  if (dia) {
+    const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
+    claves = Object.keys(agrupado).sort();
+    sufijo = ` (día ${dia})`;
+  } else {
+    agrupado = agruparJudExtraPorClave(filas, f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
+    claves = Object.keys(agrupado).sort();
+    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  }
+
+  ajustarAnchoScroll('scroll-grafico-rd-nacional', claves.length);
+  dibujarSeguimientoJudExtra('grafico-rd-nacional', claves,
+    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
+    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
+}
+
+// ---- Recupero Diario — Detallado (compañía + series elegibles + día) ----
+async function cargarRdDetalle() {
+  const companiaElegida = document.getElementById('rd-detalle-compania').value;
+  const companiaReal = companiaElegida === 'TODAS' ? 'TOTAL' : companiaElegida;
+  const seriesElegidas = Array.from(document.querySelectorAll('#rd-detalle-series input:checked')).map(el => el.value);
+  const dia = document.getElementById('rd-detalle-dia').value;
+  const granularidad = document.querySelector('.selector-granularidad[data-objetivo="rd-detalle"] .chip-granularidad.activa').dataset.granularidad;
+
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('recupero_diario_detalle')
+    .select('fecha, tipo, valor, cantidad_fichas')
+    .eq('compania', companiaReal)
+    .order('fecha', { ascending: true }));
+
+  let claves, agrupado, sufijo;
+  if (dia) {
+    const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
+    claves = Object.keys(agrupado).sort();
+    sufijo = ` (día ${dia})`;
+  } else {
+    agrupado = agruparJudExtraPorClave(filas, f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
+    claves = Object.keys(agrupado).sort();
+    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  }
+
+  const lineas = [], barras = [];
+  if (seriesElegidas.includes('total')) {
+    lineas.push({ etiqueta: 'Total' + sufijo, datos: claves.map(c => agrupado[c].judicial + agrupado[c].extrajudicial), color: COLOR_BRONCE });
+    barras.push({ etiqueta: 'Fichas total', datos: claves.map(c => agrupado[c].fichasJudicial + agrupado[c].fichasExtrajudicial), color: COLOR_BRONCE });
+  }
+  if (seriesElegidas.includes('judicial')) {
+    lineas.push({ etiqueta: 'Judicial' + sufijo, datos: claves.map(c => agrupado[c].judicial), color: COLOR_JUDICIAL });
+    barras.push({ etiqueta: 'Fichas judicial', datos: claves.map(c => agrupado[c].fichasJudicial), color: COLOR_JUDICIAL });
+  }
+  if (seriesElegidas.includes('extrajudicial')) {
+    lineas.push({ etiqueta: 'Extrajudicial' + sufijo, datos: claves.map(c => agrupado[c].extrajudicial), color: COLOR_EXTRAJUDICIAL });
+    barras.push({ etiqueta: 'Fichas extrajudicial', datos: claves.map(c => agrupado[c].fichasExtrajudicial), color: COLOR_EXTRAJUDICIAL });
+  }
+
+  ajustarAnchoScroll('scroll-grafico-rd-detalle', claves.length);
+  dibujarMultiSeguimiento('grafico-rd-detalle', claves, lineas, barras);
+}
+
+// ---- Recaudación acumulada del mes — comparativo (del 1 al día de hoy) ----
+const NOMBRES_MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+async function cargarRdAcumuladoMes() {
+  const seriesElegidas = Array.from(document.querySelectorAll('#rd-acumulado-series input:checked')).map(el => el.value);
+  const columnasDisponibles = [
+    { valor: 'total', etiqueta: 'Total', compania: 'TOTAL' },
+    { valor: 'CFN', etiqueta: 'CFN', compania: 'CFN' },
+    { valor: 'EM', etiqueta: 'Electrónica Megatone', compania: 'EM' },
+    { valor: 'CONFINA', etiqueta: 'Confina', compania: 'CONFINA' },
+  ];
+  const columnas = columnasDisponibles.filter(c => seriesElegidas.includes(c.valor));
+
+  if (!columnas.length) {
+    document.getElementById('rd-acumulado-encabezado').innerHTML = '<th>Mes</th>';
+    document.querySelector('#tabla-rd-acumulado tbody').innerHTML = '';
+    return;
+  }
+
+  const hoy = new Date();
+  const diaHoy = hoy.getDate();
+  const companiasNecesarias = columnas.map(c => c.compania);
+
+  const filas = await consultarPaginado(() => supabaseClient
+    .from('recupero_diario_detalle')
+    .select('fecha, compania, valor')
+    .in('compania', companiasNecesarias)
+    .order('fecha', { ascending: true }));
+
+  // Comparativo "mes a la fecha": solo los días 1 al día de hoy, de cada mes.
+  const filtradas = filas.filter(f => Number(f.fecha.slice(8, 10)) <= diaHoy);
+  const acumulado = {};
+  filtradas.forEach(f => {
+    const mes = f.fecha.slice(0, 7);
+    if (!acumulado[mes]) acumulado[mes] = {};
+    acumulado[mes][f.compania] = (acumulado[mes][f.compania] || 0) + Number(f.valor || 0);
+  });
+
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+  const otrosMeses = Object.keys(acumulado).filter(m => m !== mesActual).sort().reverse();
+  const mesesOrdenados = [mesActual, ...otrosMeses];
+
+  document.getElementById('rd-acumulado-encabezado').innerHTML =
+    '<th>Mes</th>' + columnas.map(c => `<th>${c.etiqueta}</th>`).join('');
+
+  document.querySelector('#tabla-rd-acumulado tbody').innerHTML = mesesOrdenados.map(mes => {
+    const [anio, mesNum] = mes.split('-');
+    const etiquetaMes = `${NOMBRES_MES[Number(mesNum) - 1]} ${anio}` + (mes === mesActual ? ' (actual)' : '');
+    const datosMes = acumulado[mes] || {};
+    return `<tr${mes === mesActual ? ' class="fila-mes-actual"' : ''}>
+      <td>${etiquetaMes}</td>
+      ${columnas.map(c => `<td class="numero">${formateadorMoneda.format(datosMes[c.compania] || 0)}</td>`).join('')}
+    </tr>`;
+  }).join('');
+}
+
+document.getElementById('rd-nacional-dia').addEventListener('change', (e) => {
+  cargarRdNacional(granularidadRdNacional, e.target.value);
+});
+document.getElementById('rd-detalle-compania').addEventListener('change', cargarRdDetalle);
+document.getElementById('rd-detalle-dia').addEventListener('change', cargarRdDetalle);
+document.querySelectorAll('#rd-detalle-series input').forEach(cb => cb.addEventListener('change', cargarRdDetalle));
+document.querySelectorAll('#rd-acumulado-series input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
 
 function cargarTodosLosSeguimientos(esEstudio, estudioId) {
   Object.keys(CONFIG_SEGUIMIENTO)
@@ -750,6 +937,14 @@ document.querySelectorAll('.selector-granularidad').forEach(selector => {
     }
     if (objetivo === 'rd-companias') {
       cargarRecuperoDiarioCompanias(granularidad);
+      return;
+    }
+    if (objetivo === 'rd-nacional') {
+      cargarRdNacional(granularidad, diaRdNacional);
+      return;
+    }
+    if (objetivo === 'rd-detalle') {
+      cargarRdDetalle();
       return;
     }
     if (objetivo === 'estudio') {
@@ -856,8 +1051,10 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
         cargarVistaResumen();
         cargarSelectorEstudios();
         cargarVistaEmpresa(companiaSeleccionadaActual);
-        cargarSeguimiento('rd-nacional', granularidadPorObjetivo['rd-nacional'] || 'diario');
+        cargarRdNacional(granularidadRdNacional, diaRdNacional);
         cargarRecuperoDiarioCompanias(granularidadRdCompanias);
+        cargarRdDetalle();
+        cargarRdAcumuladoMes();
       } else {
         estadoEl.textContent = `Error: ${filaFinal.mensaje}`;
         estadoEl.className = 'mensaje-estado error';
@@ -1071,8 +1268,6 @@ async function cargarLogCargas() {
   document.querySelector('#tabla-log tbody').innerHTML = filasHtml;
   const tablaIncremental = document.querySelector('#tabla-log-incremental tbody');
   if (tablaIncremental) tablaIncremental.innerHTML = filasHtml;
-  const tablaRecuperoDiario = document.querySelector('#tabla-log-recuperodiario tbody');
-  if (tablaRecuperoDiario) tablaRecuperoDiario.innerHTML = filasHtml;
 }
 
 // ============================================================
