@@ -97,7 +97,7 @@
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero mensual — total nacional</h3>
+          <h3>Recupero Mensual — Total Nacional</h3>
           <canvas id="grafico-recupero-nacional"></canvas>
         </div>
         <div class="tarjeta-grafico ancho-completo">
@@ -138,7 +138,7 @@
         <table id="tabla-base-gral">
           <thead>
             <tr>
-              <th>Estudio</th><th>Recupero últ. mes</th><th>En Gestión</th>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
               <th>Iniciadas</th><th>Con Embargo</th><th>Contraparte</th>
             </tr>
           </thead>
@@ -224,18 +224,63 @@
       <div class="fila-encabezado-vista">
         <h2>Recupero Diario</h2>
       </div>
-      <p class="ayuda">Para ir cargando el Recupero día a día sin tocar el resto de la Matriz — al cerrar el mes, se sigue usando "Carga Mensual" como siempre para actualizar Cartera, Pasos Procesales y la foto mensual completa.</p>
+      <p class="ayuda">Seguimiento del Recupero cargado día a día.</p>
 
       <div class="grilla-graficos">
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del Recupero — Nacional</h3>
-            <div class="selector-granularidad" data-objetivo="rd-nacional">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            <h3>Recupero Diario — Detallado</h3>
+            <div class="controles-grafico">
+              <label class="selector-dia">Compañía
+                <select id="rd-detalle-compania">
+                  <option value="TODAS">TODAS</option>
+                  <option value="CFN">CFN</option>
+                  <option value="EM">Electrónica Megatone</option>
+                  <option value="CONFINA">Confina</option>
+                </select>
+              </label>
+              <div class="checkboxes-series" id="rd-detalle-series">
+                <label><input type="checkbox" value="total" checked> Total</label>
+                <label><input type="checkbox" value="judicial" checked> Judicial</label>
+                <label><input type="checkbox" value="extrajudicial" checked> Extrajudicial</label>
+              </div>
+              <label class="selector-dia">Comparar día
+                <select id="rd-detalle-dia" class="selector-dia-mes">
+                  <option value="">Todos los días</option>
+                </select>
+              </label>
+              <div class="selector-granularidad" data-objetivo="rd-detalle">
+                <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+                <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+              </div>
             </div>
           </div>
-          <canvas id="grafico-rd-nacional"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-rd-detalle">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-rd-detalle"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="tarjeta-grafico ancho-completo">
+          <div class="fila-titulo-selector">
+            <h3>Seguimiento del Recupero — Nacional</h3>
+            <div class="controles-grafico">
+              <label class="selector-dia">Comparar día
+                <select id="rd-nacional-dia" class="selector-dia-mes">
+                  <option value="">Todos los días</option>
+                </select>
+              </label>
+              <div class="selector-granularidad" data-objetivo="rd-nacional">
+                <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+                <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+              </div>
+            </div>
+          </div>
+          <div class="grafico-scroll-x" id="scroll-grafico-rd-nacional">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-rd-nacional"></canvas>
+            </div>
+          </div>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <div class="fila-titulo-selector">
@@ -245,20 +290,26 @@
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-rd-companias"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-rd-companias">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-rd-companias"></canvas>
+            </div>
+          </div>
         </div>
       </div>
 
-      <form id="form-recupero-diario" class="tarjeta-carga">
-        <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
-        <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
-        <p id="rd-estado" class="mensaje-estado"></p>
-      </form>
-
       <div class="tabla-contenedor">
-        <h3>Historial de cargas</h3>
-        <table id="tabla-log-recuperodiario">
-          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+        <div class="fila-titulo-selector">
+          <h3>Recaudación Acumulada del Mes — Comparativo</h3>
+          <div class="checkboxes-series" id="rd-acumulado-series">
+            <label><input type="checkbox" value="total" checked> Total</label>
+            <label><input type="checkbox" value="CFN" checked> CFN</label>
+            <label><input type="checkbox" value="EM" checked> Electrónica Megatone</label>
+            <label><input type="checkbox" value="CONFINA" checked> Confina</label>
+          </div>
+        </div>
+        <table id="tabla-rd-acumulado">
+          <thead><tr id="rd-acumulado-encabezado"></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -361,6 +412,16 @@
         <button type="submit" id="btn-incremental">Procesar y guardar</button>
         <p id="incremental-estado" class="mensaje-estado"></p>
       </form>
+
+      <details class="tarjeta-carga desplegable" open>
+        <summary>Cargar Recupero del día (Recupero Diario)</summary>
+        <p class="ayuda">Para ir cargando el Recupero día a día sin tocar el resto de la Matriz — solo actualiza los gráficos de "Recupero Diario". Al cerrar el mes, se sigue usando la carga de arriba (con altas/bajas/Pasos) para actualizar todo lo demás.</p>
+        <form id="form-recupero-diario" class="tarjeta-carga">
+          <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
+          <p id="rd-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
 
       <details class="tarjeta-carga desplegable">
         <summary>Actualizar solo la Compañía (una vez, si "Por Empresa" está en cero)</summary>
