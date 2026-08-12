@@ -108,7 +108,11 @@
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-seguimiento-nacional"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-nacional">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-nacional"></canvas>
+            </div>
+          </div>
         </div>
         <div class="tarjeta-grafico ancho-completo">
           <h3 id="titulo-grafico-recupero-companias">Recupero Mensual — Por Compañía</h3>
@@ -122,7 +126,11 @@
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-seguimiento-nacional-todas"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-nacional-todas">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-nacional-todas"></canvas>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -194,7 +202,11 @@
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-seguimiento-estudio"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-estudio">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-estudio"></canvas>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -300,12 +312,19 @@
 
       <div class="tabla-contenedor">
         <div class="fila-titulo-selector">
-          <h3>Recaudación Acumulada del Mes — Comparativo</h3>
-          <div class="checkboxes-series" id="rd-acumulado-series">
-            <label><input type="checkbox" value="total" checked> Total</label>
-            <label><input type="checkbox" value="CFN" checked> CFN</label>
-            <label><input type="checkbox" value="EM" checked> Electrónica Megatone</label>
-            <label><input type="checkbox" value="CONFINA" checked> Confina</label>
+          <h3>Recaudación acumulada del mes — Comparativo</h3>
+          <div class="controles-grafico">
+            <div class="checkboxes-series" id="rd-acumulado-series">
+              <label><input type="checkbox" value="total" checked> Total</label>
+              <label><input type="checkbox" value="CFN" checked> CFN</label>
+              <label><input type="checkbox" value="EM" checked> Electrónica Megatone</label>
+              <label><input type="checkbox" value="CONFINA" checked> Confina</label>
+            </div>
+            <div class="checkboxes-series" id="rd-acumulado-tipos">
+              <label><input type="checkbox" value="combinado" checked> Total (jud.+extra.)</label>
+              <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
+              <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
+            </div>
           </div>
         </div>
         <table id="tabla-rd-acumulado">
@@ -341,7 +360,11 @@
               <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
             </div>
           </div>
-          <canvas id="grafico-seguimiento-empresa"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-empresa">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-empresa"></canvas>
+            </div>
+          </div>
         </div>
       </div>
 
