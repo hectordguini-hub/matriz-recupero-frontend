@@ -876,8 +876,8 @@ async function cargarRdAcumuladoMes() {
   ].filter(c => companiasElegidas.includes(c.valor));
   const columnasTipo = [
     { valor: 'combinado', etiqueta: '' },
-    { valor: 'JUD.', etiqueta: 'Judicial' },
-    { valor: 'EXTRA.', etiqueta: 'Extrajudicial' },
+    { valor: 'JUDICIAL', etiqueta: 'Judicial' },
+    { valor: 'EXTRAJUDICIAL', etiqueta: 'Extrajudicial' },
   ].filter(t => tiposElegidos.includes(t.valor));
 
   if (!columnasCompania.length || !columnasTipo.length) {
