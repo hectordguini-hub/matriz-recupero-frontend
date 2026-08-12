@@ -349,9 +349,13 @@
               <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
               <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
             </div>
+            <select class="selector-rango" data-objetivo="rd-acumulado">
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
+            </select>
           </div>
         </div>
-        <table id="tabla-rd-acumulado">
+        <table id="tabla-rd-acumulado" class="tabla-compacta">
           <thead><tr id="rd-acumulado-encabezado"></tr></thead>
           <tbody></tbody>
         </table>
