@@ -315,8 +315,7 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
 
   if (companiaSeleccionada === 'GENERAL') {
     tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
-    const { data: filas, error } = await supabaseClient.rpc('recupero_diario_por_compania_nacional');
-    if (error) { console.error(error); return; }
+    const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional'));
     const agrupado = {};
     (filas || []).forEach(f => {
       const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
@@ -466,11 +465,10 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
       meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
 
     const granularidad = granularidadPorObjetivo['estudio'] || 'diario';
-    const { data: filasDiario, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+    const filasDiario = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
       compania_filtro: companiaSeleccionada,
       estudio_id_filtro: estudioId,
-    });
-    if (error) { console.error(error); return; }
+    }));
     const agrupado = {};
     (filasDiario || []).forEach(f => {
       const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
@@ -613,11 +611,10 @@ async function cargarVistaEmpresa(compania) {
 
 async function cargarSeguimientoEmpresa(compania, granularidad) {
   granularidadEmpresa = granularidad;
-  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: compania,
     estudio_id_filtro: null,
-  });
-  if (error) { console.error(error); return; }
+  }));
 
   const agrupado = {};
   (filas || []).forEach(f => {
@@ -712,11 +709,10 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   granularidadPorObjetivo[objetivo] = granularidad;
   if (config.esEstudio && !estudioId) return; // todavía no hay estudio elegido
 
-  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: config.compania,
     estudio_id_filtro: config.esEstudio ? estudioId : null,
-  });
-  if (error) { console.error(error); return; }
+  }));
 
   const agrupado = {};
   (filas || []).forEach(f => {
@@ -743,8 +739,7 @@ let granularidadRdCompanias = 'diario';
 
 async function cargarRecuperoDiarioCompanias(granularidad) {
   granularidadRdCompanias = granularidad;
-  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_por_compania_nacional');
-  if (error) { console.error(error); return; }
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional'));
   const agrupado = {};
   (filas || []).forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
@@ -780,11 +775,10 @@ let diaRdNacional = '';
 async function cargarRdNacional(granularidad, dia) {
   granularidadRdNacional = granularidad;
   diaRdNacional = dia;
-  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: 'TOTAL',
     estudio_id_filtro: null,
-  });
-  if (error) { console.error(error); return; }
+  }));
 
   let claves, agrupado, sufijo;
   if (dia) {
@@ -812,11 +806,10 @@ async function cargarRdDetalle() {
   const dia = document.getElementById('rd-detalle-dia').value;
   const granularidad = document.querySelector('.selector-granularidad[data-objetivo="rd-detalle"] .chip-granularidad.activa').dataset.granularidad;
 
-  const { data: filas, error } = await supabaseClient.rpc('recupero_diario_agregado', {
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: companiaReal,
     estudio_id_filtro: null,
-  });
-  if (error) { console.error(error); return; }
+  }));
 
   let claves, agrupado, sufijo;
   if (dia) {
@@ -852,16 +845,21 @@ async function cargarRdDetalle() {
 const NOMBRES_MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 async function cargarRdAcumuladoMes() {
-  const seriesElegidas = Array.from(document.querySelectorAll('#rd-acumulado-series input:checked')).map(el => el.value);
-  const columnasDisponibles = [
+  const companiasElegidas = Array.from(document.querySelectorAll('#rd-acumulado-series input:checked')).map(el => el.value);
+  const tiposElegidos = Array.from(document.querySelectorAll('#rd-acumulado-tipos input:checked')).map(el => el.value);
+  const columnasCompania = [
     { valor: 'total', etiqueta: 'Total', compania: 'TOTAL' },
     { valor: 'CFN', etiqueta: 'CFN', compania: 'CFN' },
     { valor: 'EM', etiqueta: 'Electrónica Megatone', compania: 'EM' },
     { valor: 'CONFINA', etiqueta: 'Confina', compania: 'CONFINA' },
-  ];
-  const columnas = columnasDisponibles.filter(c => seriesElegidas.includes(c.valor));
+  ].filter(c => companiasElegidas.includes(c.valor));
+  const columnasTipo = [
+    { valor: 'combinado', etiqueta: '' },
+    { valor: 'JUDICIAL', etiqueta: 'Judicial' },
+    { valor: 'EXTRAJUDICIAL', etiqueta: 'Extrajudicial' },
+  ].filter(t => tiposElegidos.includes(t.valor));
 
-  if (!columnas.length) {
+  if (!columnasCompania.length || !columnasTipo.length) {
     document.getElementById('rd-acumulado-encabezado').innerHTML = '<th>Mes</th>';
     document.querySelector('#tabla-rd-acumulado tbody').innerHTML = '';
     return;
@@ -870,18 +868,28 @@ async function cargarRdAcumuladoMes() {
   const hoy = new Date();
   const diaHoy = hoy.getDate();
 
-  const { data: filas, error } = await supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy });
-  if (error) { console.error(error); return; }
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy }));
 
+  // acumulado[mes][compania][tipo] = valor ('combinado' = judicial + extrajudicial)
   const acumulado = {};
   (filas || []).forEach(f => {
     if (!acumulado[f.mes]) acumulado[f.mes] = {};
-    acumulado[f.mes][f.compania] = Number(f.valor || 0);
+    if (!acumulado[f.mes][f.compania]) acumulado[f.mes][f.compania] = { JUDICIAL: 0, EXTRAJUDICIAL: 0 };
+    if (f.tipo === 'JUDICIAL' || f.tipo === 'EXTRAJUDICIAL') {
+      acumulado[f.mes][f.compania][f.tipo] += Number(f.valor || 0);
+    }
   });
 
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
   const otrosMeses = Object.keys(acumulado).filter(m => m !== mesActual).sort().reverse();
   const mesesOrdenados = [mesActual, ...otrosMeses];
+
+  // Columnas = combinación compañía x tipo elegidos.
+  const columnas = [];
+  columnasCompania.forEach(c => columnasTipo.forEach(t => columnas.push({
+    etiqueta: t.valor === 'combinado' ? c.etiqueta : `${c.etiqueta} — ${t.etiqueta}`,
+    compania: c.compania, tipo: t.valor,
+  })));
 
   document.getElementById('rd-acumulado-encabezado').innerHTML =
     '<th>Mes</th>' + columnas.map(c => `<th>${c.etiqueta}</th>`).join('');
@@ -889,10 +897,14 @@ async function cargarRdAcumuladoMes() {
   document.querySelector('#tabla-rd-acumulado tbody').innerHTML = mesesOrdenados.map(mes => {
     const [anio, mesNum] = mes.split('-');
     const etiquetaMes = `${NOMBRES_MES[Number(mesNum) - 1]} ${anio}` + (mes === mesActual ? ' (actual)' : '');
-    const datosMes = acumulado[mes] || {};
+    const datosCia = acumulado[mes] || {};
     return `<tr${mes === mesActual ? ' class="fila-mes-actual"' : ''}>
       <td>${etiquetaMes}</td>
-      ${columnas.map(c => `<td class="numero">${formateadorMoneda.format(datosMes[c.compania] || 0)}</td>`).join('')}
+      ${columnas.map(c => {
+        const datosMes = datosCia[c.compania] || { JUDICIAL: 0, EXTRAJUDICIAL: 0 };
+        const valor = c.tipo === 'combinado' ? (datosMes.JUDICIAL + datosMes.EXTRAJUDICIAL) : datosMes[c.tipo];
+        return `<td class="numero">${formateadorMoneda.format(valor || 0)}</td>`;
+      }).join('')}
     </tr>`;
   }).join('');
 }
@@ -904,6 +916,7 @@ document.getElementById('rd-detalle-compania').addEventListener('change', cargar
 document.getElementById('rd-detalle-dia').addEventListener('change', cargarRdDetalle);
 document.querySelectorAll('#rd-detalle-series input').forEach(cb => cb.addEventListener('change', cargarRdDetalle));
 document.querySelectorAll('#rd-acumulado-series input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
+document.querySelectorAll('#rd-acumulado-tipos input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
 
 function cargarTodosLosSeguimientos(esEstudio, estudioId) {
   Object.keys(CONFIG_SEGUIMIENTO)
