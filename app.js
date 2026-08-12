@@ -315,7 +315,9 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
 
   if (companiaSeleccionada === 'GENERAL') {
     tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
-    const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional'));
+    const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional', {
+      fecha_desde: obtenerFechaDesdeSelector('todas'),
+    }));
     const agrupado = {};
     (filas || []).forEach(f => {
       const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
@@ -468,6 +470,7 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
     const filasDiario = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
       compania_filtro: companiaSeleccionada,
       estudio_id_filtro: estudioId,
+      fecha_desde: obtenerFechaDesdeSelector('estudio'),
     }));
     const agrupado = {};
     (filasDiario || []).forEach(f => {
@@ -614,6 +617,7 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: compania,
     estudio_id_filtro: null,
+    fecha_desde: obtenerFechaDesdeSelector('empresa'),
   }));
 
   const agrupado = {};
@@ -659,6 +663,18 @@ function claveDeSemana(fechaIso) {
   const diaSemana = d.getDay() || 7; // domingo=0 -> tratarlo como 7
   d.setDate(d.getDate() - diaSemana + 1); // lunes de esa semana
   return d.toISOString().slice(0, 10);
+}
+
+// Lee el <select class="selector-rango"> de un gráfico y devuelve la fecha
+// desde la que hay que pedir datos ('YYYY-MM-DD'), según los meses elegidos
+// (6 por defecto, o 1 año). Si no hay selector para ese objetivo, no limita.
+function obtenerFechaDesdeSelector(objetivo) {
+  const select = document.querySelector(`.selector-rango[data-objetivo="${objetivo}"]`);
+  if (!select) return null;
+  const meses = Number(select.value) || 6;
+  const hoy = new Date();
+  const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - meses, hoy.getDate());
+  return fecha.toISOString().slice(0, 10);
 }
 
 // Ajusta el ancho del contenedor interior de un gráfico según la cantidad de
@@ -712,6 +728,7 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: config.compania,
     estudio_id_filtro: config.esEstudio ? estudioId : null,
+    fecha_desde: obtenerFechaDesdeSelector(objetivo),
   }));
 
   const agrupado = {};
@@ -739,7 +756,9 @@ let granularidadRdCompanias = 'diario';
 
 async function cargarRecuperoDiarioCompanias(granularidad) {
   granularidadRdCompanias = granularidad;
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional'));
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional', {
+    fecha_desde: obtenerFechaDesdeSelector('rd-companias'),
+  }));
   const agrupado = {};
   (filas || []).forEach(f => {
     const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
@@ -778,6 +797,7 @@ async function cargarRdNacional(granularidad, dia) {
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: 'TOTAL',
     estudio_id_filtro: null,
+    fecha_desde: dia ? null : obtenerFechaDesdeSelector('rd-nacional'),
   }));
 
   let claves, agrupado, sufijo;
@@ -809,6 +829,7 @@ async function cargarRdDetalle() {
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: companiaReal,
     estudio_id_filtro: null,
+    fecha_desde: dia ? null : obtenerFechaDesdeSelector('rd-detalle'),
   }));
 
   let claves, agrupado, sufijo;
@@ -924,46 +945,60 @@ function cargarTodosLosSeguimientos(esEstudio, estudioId) {
     .forEach(objetivo => cargarSeguimiento(objetivo, granularidadPorObjetivo[objetivo] || 'diario', estudioId));
 }
 
+// Recarga el gráfico correspondiente a un objetivo, respetando la
+// granularidad actual — se usa tanto al cambiar Diario/Semanal como al
+// cambiar el selector de rango (6 meses / 1 año).
+function recargarGraficoPorObjetivo(objetivo, granularidad) {
+  if (objetivo === 'empresa') {
+    cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
+    return;
+  }
+  if (objetivo === 'todas') {
+    cargarSeguimientoTodasNacional('GENERAL', granularidad);
+    return;
+  }
+  if (objetivo === 'rd-companias') {
+    cargarRecuperoDiarioCompanias(granularidad);
+    return;
+  }
+  if (objetivo === 'rd-nacional') {
+    cargarRdNacional(granularidad, diaRdNacional);
+    return;
+  }
+  if (objetivo === 'rd-detalle') {
+    cargarRdDetalle();
+    return;
+  }
+  if (objetivo === 'estudio') {
+    granularidadPorObjetivo['estudio'] = granularidad;
+    const companiaElegida = document.getElementById('selector-compania-estudio').value;
+    if (companiaElegida === 'GENERAL') {
+      cargarSeguimiento('estudio', granularidad, estudioSeleccionadoActual);
+    } else {
+      cargarGraficosEstudio(estudioSeleccionadoActual, companiaElegida);
+    }
+    return;
+  }
+  const config = CONFIG_SEGUIMIENTO[objetivo];
+  if (config) cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
+}
+
 document.querySelectorAll('.selector-granularidad').forEach(selector => {
   selector.addEventListener('click', (e) => {
     const boton = e.target.closest('.chip-granularidad');
     if (!boton) return;
     selector.querySelectorAll('.chip-granularidad').forEach(b => b.classList.remove('activa'));
     boton.classList.add('activa');
+    recargarGraficoPorObjetivo(selector.dataset.objetivo, boton.dataset.granularidad);
+  });
+});
+
+document.querySelectorAll('.selector-rango').forEach(selector => {
+  selector.addEventListener('change', () => {
     const objetivo = selector.dataset.objetivo;
-    const granularidad = boton.dataset.granularidad;
-    if (objetivo === 'empresa') {
-      cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
-      return;
-    }
-    if (objetivo === 'todas') {
-      cargarSeguimientoTodasNacional('GENERAL', granularidad);
-      return;
-    }
-    if (objetivo === 'rd-companias') {
-      cargarRecuperoDiarioCompanias(granularidad);
-      return;
-    }
-    if (objetivo === 'rd-nacional') {
-      cargarRdNacional(granularidad, diaRdNacional);
-      return;
-    }
-    if (objetivo === 'rd-detalle') {
-      cargarRdDetalle();
-      return;
-    }
-    if (objetivo === 'estudio') {
-      granularidadPorObjetivo['estudio'] = granularidad;
-      const companiaElegida = document.getElementById('selector-compania-estudio').value;
-      if (companiaElegida === 'GENERAL') {
-        cargarSeguimiento('estudio', granularidad, estudioSeleccionadoActual);
-      } else {
-        cargarGraficosEstudio(estudioSeleccionadoActual, companiaElegida);
-      }
-      return;
-    }
-    const config = CONFIG_SEGUIMIENTO[objetivo];
-    cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
+    const selectorGranularidad = document.querySelector(`.selector-granularidad[data-objetivo="${objetivo}"] .chip-granularidad.activa`);
+    const granularidad = selectorGranularidad ? selectorGranularidad.dataset.granularidad : (granularidadPorObjetivo[objetivo] || 'diario');
+    recargarGraficoPorObjetivo(objetivo, granularidad);
   });
 });
 
