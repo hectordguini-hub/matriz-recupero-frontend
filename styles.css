@@ -274,10 +274,10 @@ th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(
 th { color: var(--texto-tenue); font-weight: 500; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.03em; }
 td.numero, th.numero { font-family: 'IBM Plex Mono', monospace; text-align: right; }
 
-.tabla-compacta { font-size: 0.74rem; table-layout: fixed; }
-.tabla-compacta th, .tabla-compacta td { white-space: normal; padding: 0.4rem 0.5rem; word-break: break-word; }
-.tabla-compacta th { font-size: 0.62rem; line-height: 1.2; }
-.tabla-compacta td.numero, .tabla-compacta th.numero { font-size: 0.72rem; }
+.tabla-compacta { font-size: 0.74rem; }
+.tabla-compacta th, .tabla-compacta td { padding: 0.4rem 0.5rem; }
+.tabla-compacta th { font-size: 0.62rem; line-height: 1.2; white-space: normal; word-break: break-word; max-width: 90px; }
+.tabla-compacta td.numero, .tabla-compacta th.numero { font-size: 0.72rem; white-space: nowrap; }
 
 /* ---------- Carga ---------- */
 .ayuda { color: var(--texto-tenue); font-size: 0.9rem; max-width: 640px; }
