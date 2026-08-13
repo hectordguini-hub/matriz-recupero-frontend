@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GERENCIAR S.R.L. — Matriz de Recupero</title>
-<link rel="icon" href="logo-gerenciar.png">
+<link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -96,16 +96,21 @@
 
 
       <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero Mensual — Total Nacional</h3>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Recupero Mensual — Total Nacional</summary>
+          
           <canvas id="grafico-recupero-nacional"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Seguimiento Del Recupero — Nacional</summary>
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del Recupero — Nacional</h3>
+            
+            <select id="selector-dia-nacional" class="selector-dia-mes" data-objetivo="nacional">
+              <option value="">Todos los días</option>
+            </select>
             <select class="selector-rango" data-objetivo="nacional">
-              <option value="6" selected>Últimos 6 Meses</option>
-              <option value="12">Último Año</option>
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
             </select>
             <div class="selector-granularidad" data-objetivo="nacional">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
@@ -117,17 +122,22 @@
               <canvas id="grafico-seguimiento-nacional"></canvas>
             </div>
           </div>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <h3 id="titulo-grafico-recupero-companias">Recupero Mensual — Por Compañía</h3>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-recupero-companias">Recupero Mensual — Por Compañía</summary>
+          
           <canvas id="grafico-recupero-nacional-companias"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-seguimiento-todas">Seguimiento — TODAS (Nacional)</summary>
           <div class="fila-titulo-selector">
-            <h3 id="titulo-grafico-seguimiento-todas">Seguimiento — TODAS (Nacional)</h3>
+            
+            <select id="selector-dia-todas" class="selector-dia-mes" data-objetivo="todas">
+              <option value="">Todos los días</option>
+            </select>
             <select class="selector-rango" data-objetivo="todas">
-              <option value="6" selected>Últimos 6 Meses</option>
-              <option value="12">Último Año</option>
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
             </select>
             <div class="selector-granularidad" data-objetivo="todas">
               <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
@@ -139,38 +149,54 @@
               <canvas id="grafico-seguimiento-nacional-todas"></canvas>
             </div>
           </div>
-        </div>
+        </details>
       </div>
 
       <div class="grilla-graficos">
         <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Cédulas de Sentencia / Liquidaciones / Embargos — Total (Nacional)</summary>
+          <summary>Cédulas De Sentencia / Liquidaciones / Embargos — Total (Nacional)</summary>
           <canvas id="grafico-pasos-nacional-total"></canvas>
         </details>
       </div>
 
-      <div class="tabla-contenedor">
-        <h3>Detalle por Estudio</h3>
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Por Estudio</summary>
+        
         <table id="tabla-base-gral">
           <thead>
             <tr>
               <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
-              <th>Iniciadas</th><th>Con Embargo</th><th>Contraparte</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
-      </div>
+      </details>
 
       <div class="grilla-graficos">
-        <div class="tarjeta-grafico">
-          <h3>Recupero del último mes cerrado, por Estudio</h3>
+        <details class="tarjeta-grafico desplegable" open>
+          <summary>Recupero Del Último Mes Cerrado, Por Estudio</summary>
+          <div class="fila-titulo-selector">
+            
+            <div class="controles-grafico">
+              <select id="torta-estudios-modo">
+                <option value="estudio">Por estudio</option>
+                <option value="empresa">Por empresa</option>
+              </select>
+              <div class="checkboxes-series" id="torta-estudios-tipos">
+                <label><input type="checkbox" value="combinado" checked> Total</label>
+                <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
+                <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
+              </div>
+            </div>
+          </div>
           <canvas id="grafico-barras-estudios"></canvas>
-        </div>
-        <div class="tarjeta-grafico">
-          <h3>Judicial vs. Extrajudicial (últ. mes)</h3>
+        </details>
+        <details class="tarjeta-grafico desplegable" open>
+          <summary>Judicial Vs. Extrajudicial (Últ. Mes)</summary>
+          
           <canvas id="grafico-torta-jud-extra"></canvas>
-        </div>
+        </details>
       </div>
 
       <div class="pie-vista-resumen">
@@ -182,14 +208,14 @@
     <!-- ---------- VISTA: POR ESTUDIO ---------- -->
     <section id="vista-estudio" class="vista oculto">
       <div class="fila-encabezado-vista">
-        <h2>Detalle por Estudio</h2>
+        <h2>Detalle por estudio</h2>
         <select id="selector-estudio"></select>
       </div>
 
       <div class="fila-titulo-selector">
         <span class="etiqueta-actualizado">Indicadores</span>
         <select id="selector-compania-estudio">
-          <option value="GENERAL">TODAS</option>
+          <option value="GENERAL">General (todas)</option>
           <option value="CFN">CFN</option>
           <option value="EM">Electrónica Megatone</option>
           <option value="CONFINA">Confina</option>
@@ -198,49 +224,31 @@
       <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-estudio"></div>
 
       <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
-          <h3 id="titulo-grafico-estudio-recupero">Recupero Mensual — Total / Judicial / Extrajudicial</h3>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-estudio-recupero">Recupero Mensual — Total / Judicial / Extrajudicial</summary>
+          
           <canvas id="grafico-estudio-recupero"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3 id="titulo-grafico-seguimiento-estudio">Seguimiento del Recupero — Este Estudio</h3>
-            <select class="selector-rango" data-objetivo="estudio">
-              <option value="6" selected>Últimos 6 Meses</option>
-              <option value="12">Último Año</option>
-            </select>
-            <div class="selector-granularidad" data-objetivo="estudio">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-estudio">
-            <div class="grafico-scroll-x-interior">
-              <canvas id="grafico-seguimiento-estudio"></canvas>
-            </div>
-          </div>
-        </div>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-pasos-estudio">Cédulas De Sentencia / Liquidaciones / Embargos — Total (Empresa)</summary>
+          
+          <canvas id="grafico-pasos-estudio-total"></canvas>
+        </details>
       </div>
 
-      <div class="tabla-contenedor">
-        <h3>Detalle Empresa</h3>
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Empresa</summary>
+        
         <table id="tabla-estudio-por-empresa">
           <thead>
             <tr>
               <th>Compañía</th><th>Recupero últ. mes</th><th>En gestión</th>
-              <th>Iniciadas</th><th>Con Embargo</th><th>Contraparte</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
-      </div>
-
-      <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
-          <h3 id="titulo-grafico-pasos-estudio">Cédulas de Sentencia / Liquidaciones / Embargos — Total (Empresa)</h3>
-          <canvas id="grafico-pasos-estudio-total"></canvas>
-        </div>
-      </div>
+      </details>
     </section>
 
     <!-- ---------- VISTA: RECUPERO DIARIO ---------- -->
@@ -248,12 +256,13 @@
       <div class="fila-encabezado-vista">
         <h2>Recupero Diario</h2>
       </div>
-      <p class="ayuda">Seguimiento del Recupero cargado día a día.</p>
+      <p class="ayuda">Seguimiento del Recupero cargado día a día — la carga del archivo se hace desde "Carga Mensual".</p>
 
       <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Recupero Diario — Detallado</summary>
           <div class="fila-titulo-selector">
-            <h3>Recupero Diario — Detallado</h3>
+            
             <div class="controles-grafico">
               <label class="selector-dia">Compañía
                 <select id="rd-detalle-compania">
@@ -264,8 +273,8 @@
                 </select>
               </label>
               <select class="selector-rango" data-objetivo="rd-detalle">
-                <option value="6" selected>Últimos 6 Meses</option>
-                <option value="12">Último Año</option>
+                <option value="6" selected>Últimos 6 meses</option>
+                <option value="12">Último año</option>
               </select>
               <div class="checkboxes-series" id="rd-detalle-series">
                 <label><input type="checkbox" value="total" checked> Total</label>
@@ -288,14 +297,18 @@
               <canvas id="grafico-rd-detalle"></canvas>
             </div>
           </div>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-rd-nacional">Seguimiento Del Recupero — Nacional</summary>
           <div class="fila-titulo-selector">
-            <h3>Seguimiento del Recupero — Nacional</h3>
+            
             <div class="controles-grafico">
+              <select id="rd-nacional-estudio">
+                <option value="">Todos (nacional)</option>
+              </select>
               <select class="selector-rango" data-objetivo="rd-nacional">
-                <option value="6" selected>Últimos 6 Meses</option>
-                <option value="12">Último Año</option>
+                <option value="6" selected>Últimos 6 meses</option>
+                <option value="12">Último año</option>
               </select>
               <label class="selector-dia">Comparar día
                 <select id="rd-nacional-dia" class="selector-dia-mes">
@@ -313,30 +326,13 @@
               <canvas id="grafico-rd-nacional"></canvas>
             </div>
           </div>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Recupero Diario — Por Compañía</h3>
-            <select class="selector-rango" data-objetivo="rd-companias">
-              <option value="6" selected>Últimos 6 Meses</option>
-              <option value="12">Último Año</option>
-            </select>
-            <div class="selector-granularidad" data-objetivo="rd-companias">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <div class="grafico-scroll-x" id="scroll-grafico-rd-companias">
-            <div class="grafico-scroll-x-interior">
-              <canvas id="grafico-rd-companias"></canvas>
-            </div>
-          </div>
-        </div>
+        </details>
       </div>
 
-      <div class="tabla-contenedor">
+      <details class="tabla-contenedor desplegable" open>
+          <summary id="titulo-rd-acumulado">Recaudación Acumulada Del Mes — Comparativo (Del 1 Al Día De Hoy, Mes Actual Primero)</summary>
         <div class="fila-titulo-selector">
-          <h3>Recaudación acumulada del mes — Comparativo</h3>
+          
           <div class="controles-grafico">
             <div class="checkboxes-series" id="rd-acumulado-series">
               <label><input type="checkbox" value="total" checked> Total</label>
@@ -345,13 +341,16 @@
               <label><input type="checkbox" value="CONFINA" checked> Confina</label>
             </div>
             <div class="checkboxes-series" id="rd-acumulado-tipos">
-              <label><input type="checkbox" value="combinado" checked> Total (Jud.+Extra.)</label>
+              <label><input type="checkbox" value="combinado" checked> Total (jud.+extra.)</label>
               <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
               <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
             </div>
+            <select id="selector-dia-rd-acumulado" class="selector-dia-mes">
+              <option value="">Hasta hoy</option>
+            </select>
             <select class="selector-rango" data-objetivo="rd-acumulado">
-              <option value="6" selected>Últimos 6 Meses</option>
-              <option value="12">Último Año</option>
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
             </select>
           </div>
         </div>
@@ -359,13 +358,13 @@
           <thead><tr id="rd-acumulado-encabezado"></tr></thead>
           <tbody></tbody>
         </table>
-      </div>
+      </details>
     </section>
 
     <!-- ---------- VISTA: POR EMPRESA ---------- -->
     <section id="vista-empresa" class="vista oculto">
       <div class="fila-encabezado-vista">
-        <h2>Detalle por Empresa</h2>
+        <h2>Detalle por empresa</h2>
         <select id="selector-empresa">
           <option value="CFN">CFN</option>
           <option value="EM">Electrónica Megatone</option>
@@ -376,49 +375,31 @@
       <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-empresa"></div>
 
       <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
-          <h3>Recupero Mensual — Total / Judicial / Extrajudicial</h3>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Recupero Mensual — Total / Judicial / Extrajudicial</summary>
+          
           <canvas id="grafico-empresa-recupero"></canvas>
-        </div>
-        <div class="tarjeta-grafico ancho-completo">
-          <div class="fila-titulo-selector">
-            <h3>Seguimiento del Recupero — Esta Empresa</h3>
-            <select class="selector-rango" data-objetivo="empresa">
-              <option value="6" selected>Últimos 6 meses</option>
-              <option value="12">Último Año</option>
-            </select>
-            <div class="selector-granularidad" data-objetivo="empresa">
-              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
-              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
-            </div>
-          </div>
-          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-empresa">
-            <div class="grafico-scroll-x-interior">
-              <canvas id="grafico-seguimiento-empresa"></canvas>
-            </div>
-          </div>
-        </div>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-pasos-empresa">Cédulas De Sentencia / Liquidaciones / Embargos — CFN</summary>
+          
+          <canvas id="grafico-pasos-empresa"></canvas>
+        </details>
       </div>
 
-      <div class="tabla-contenedor">
-        <h3>Detalle por Estudio</h3>
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Por Estudio</summary>
+        
         <table id="tabla-empresa-por-estudio">
           <thead>
             <tr>
               <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
-              <th>Iniciadas</th><th>Con Embargo</th><th>Contraparte</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
-      </div>
-
-      <div class="grilla-graficos">
-        <div class="tarjeta-grafico ancho-completo">
-          <h3 id="titulo-grafico-pasos-empresa">Cédulas de Sentencia / Liquidaciones / Embargos — CFN</h3>
-          <canvas id="grafico-pasos-empresa"></canvas>
-        </div>
-      </div>
+      </details>
     </section>
 
     <!-- ---------- VISTA: CARGA COMPLETA ---------- -->
@@ -438,13 +419,14 @@
         <p id="carga-estado" class="mensaje-estado"></p>
       </form>
 
-      <div class="tabla-contenedor">
-        <h3>Historial de cargas</h3>
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Historial De Cargas</summary>
+        
         <table id="tabla-log">
           <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
           <tbody></tbody>
         </table>
-      </div>
+      </details>
     </section>
 
     <!-- ---------- VISTA: CARGA MENSUAL (INCREMENTAL) ---------- -->
@@ -469,7 +451,7 @@
       </form>
 
       <details class="tarjeta-carga desplegable" open>
-        <summary>Cargar Recupero del día (Recupero Diario)</summary>
+        <summary>Cargar Recupero Del Día (Recupero Diario)</summary>
         <p class="ayuda">Para ir cargando el Recupero día a día sin tocar el resto de la Matriz — solo actualiza los gráficos de "Recupero Diario". Al cerrar el mes, se sigue usando la carga de arriba (con altas/bajas/Pasos) para actualizar todo lo demás.</p>
         <form id="form-recupero-diario" class="tarjeta-carga">
           <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
@@ -479,7 +461,7 @@
       </details>
 
       <details class="tarjeta-carga desplegable">
-        <summary>Actualizar solo la Compañía (una vez, si "Por Empresa" está en cero)</summary>
+        <summary>Actualizar Solo La Compañía (Una Vez, Si "Por Empresa" Está En Cero)</summary>
         <p class="ayuda">Uso puntual: subí cualquier extracto de Cartera que tenga las columnas "Ficha" y "Compania" (puede ser tu Cartera completa actual) — actualiza SOLO ese dato en las causas que ya tenés cargadas, sin reprocesar nada más. No hace falta usarlo todos los meses.</p>
         <form id="form-backfill-compania" class="tarjeta-carga">
           <label class="campo-archivo">Archivo con Ficha + Compania <input type="file" id="backfill-archivo" accept=".xlsx,.csv" required></label>
@@ -489,7 +471,7 @@
       </details>
 
       <details class="tarjeta-carga desplegable">
-        <summary>Cargar Pasos Procesales de un mes anterior</summary>
+        <summary>Cargar Pasos Procesales De Un Mes Anterior</summary>
         <p class="ayuda">Para ir completando meses pasados de a uno, sin subir altas/bajas/Recupero de ese mismo mes — usa la referencia de Juzgado/Abogados ya guardada.</p>
         <form id="form-pasos-historico" class="tarjeta-carga">
           <label class="campo-archivo">Mes al que corresponden estos Pasos Procesales
@@ -501,13 +483,14 @@
         </form>
       </details>
 
-      <div class="tabla-contenedor">
-        <h3>Historial de cargas</h3>
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Historial De Cargas</summary>
+        
         <table id="tabla-log-incremental">
           <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
           <tbody></tbody>
         </table>
-      </div>
+      </details>
     </section>
   </main>
   </div>
