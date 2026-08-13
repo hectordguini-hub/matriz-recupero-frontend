@@ -146,7 +146,7 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
 .sesion { display: flex; align-items: center; gap: 0.9rem; font-size: 0.85rem; color: #cfd5e0; }
 .btn-texto { background: none; border: none; color: var(--bronce-claro); cursor: pointer; font-size: 0.85rem; padding: 0; }
 
-main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
+main { max-width: 1800px; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
 
 .fila-encabezado-vista { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.1rem; flex-wrap: wrap; gap: 0.5rem; }
 .fila-encabezado-vista h2 { margin: 0; font-size: 1.35rem; }
