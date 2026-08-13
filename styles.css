@@ -118,13 +118,21 @@ h1, h2, h3, strong { font-family: 'Open Sans', sans-serif; font-weight: 800; }
   width: 210px; flex-shrink: 0;
   background: var(--tinta);
   padding: 1rem 0.6rem;
-  min-height: calc(100vh - 62px);
-  transition: margin-left 0.2s ease, width 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+  position: fixed;
+  top: 62px;
+  left: 0;
+  height: calc(100vh - 62px);
+  z-index: 40;
+  overflow-y: auto;
+  transition: transform 0.2s ease, opacity 0.15s ease;
 }
 .menu-lateral.oculto-menu {
-  width: 0; padding-left: 0; padding-right: 0; opacity: 0;
-  overflow: hidden;
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
+.cuerpo-app main { transition: margin-left 0.2s ease; }
+#nav-pestanas:not(.oculto-menu) ~ main { margin-left: 210px; }
 .menu-lateral .pestana {
   background: transparent;
   border: none;
