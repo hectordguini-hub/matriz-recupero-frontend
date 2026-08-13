@@ -84,8 +84,10 @@ function mostrarApp(session) {
   cargarVistaEmpresa('CFN');
   llenarSelectorDeDias('rd-nacional-dia');
   llenarSelectorDeDias('rd-detalle-dia');
+  llenarSelectorDeDias('selector-dia-nacional');
+  llenarSelectorDeDias('selector-dia-todas');
+  llenarSelectorDeDias('selector-dia-rd-acumulado');
   cargarRdNacional('diario', '');
-  cargarRecuperoDiarioCompanias('diario');
   cargarRdDetalle();
   cargarRdAcumuladoMes();
   cargarLogCargas();
@@ -151,7 +153,7 @@ async function cargarVistaResumen() {
   // ---- KPIs (según el selector General/CFN/Megatone/Confina) ----
   cargarKpisGenerales('GENERAL');
   cargarGraficoRecuperoPorCompania('GENERAL');
-  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional);
+  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional, diaTodas);
 
   const ultimaActualizacion = base.reduce((max, f) => f.actualizado_en > max ? f.actualizado_en : max, '');
   document.getElementById('resumen-actualizado').textContent = ultimaActualizacion
@@ -176,13 +178,8 @@ async function cargarVistaResumen() {
   cargarTodosLosSeguimientos(false);
   cargarTodosLosPasosDetalle(false);
 
-  // ---- Gráfico: barras por estudio (últ. mes cerrado) ----
-  const filasUltimoMes = base.filter(f => f.parametro === 'RECUPERO ULT.MES CERRADO' && Number(f.valor) > 0)
-    .sort((a, b) => b.valor - a.valor);
-  dibujarBarras('grafico-barras-estudios',
-    filasUltimoMes.map(f => f.estudios.nombre),
-    filasUltimoMes.map(f => Number(f.valor)),
-    COLOR_TINTA);
+  // ---- Gráfico: torta por estudio o por empresa (últ. mes cerrado) ----
+  cargarTortaEstudios();
 
   // ---- Gráfico: torta judicial vs extrajudicial (último mes, todos los estudios) ----
   let totalJud = 0, totalExtra = 0;
@@ -255,6 +252,8 @@ async function cargarKpisGenerales(companiaSeleccionada) {
 }
 
 let granularidadTodasNacional = 'diario';
+let diaNacional = '';
+let diaTodas = '';
 
 // Gráfico 1: Recupero mensual, con una línea + una barra de fichas por cada
 // compañía (CFN/Megatone/Confina) — o, si se elige una compañía puntual en
@@ -263,7 +262,7 @@ let granularidadTodasNacional = 'diario';
 async function cargarGraficoRecuperoPorCompania(companiaSeleccionada) {
   const tituloEl = document.getElementById('titulo-grafico-recupero-companias');
   if (companiaSeleccionada === 'GENERAL') {
-    tituloEl.textContent = 'Recupero mensual — por compañía';
+    tituloEl.textContent = 'Recupero Mensual — Por Compañía';
     const filas = await consultarPaginado(() => supabaseClient
       .from('matriz_mensual').select('mes, parametro, valor')
       .in('parametro', ['RECUPERO CFN', 'RECUPERO EM', 'RECUPERO CONFINA', 'CCP CFN', 'CCP EM', 'CCP CONFINA'])
@@ -289,7 +288,7 @@ async function cargarGraficoRecuperoPorCompania(companiaSeleccionada) {
       ]);
   } else {
     const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-    tituloEl.textContent = `Recupero mensual — ${nombreCia} (judicial / extrajudicial)`;
+    tituloEl.textContent = `Recupero Mensual — ${nombreCia} (Judicial / Extrajudicial)`;
     const filas = await consultarPaginado(() => supabaseClient
       .from('matriz_mensual').select('mes, parametro, valor')
       .in('parametro', [`RECUPERO ${companiaSeleccionada} JUD.`, `RECUPERO ${companiaSeleccionada} EXT.`, `CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
@@ -309,18 +308,19 @@ async function cargarGraficoRecuperoPorCompania(companiaSeleccionada) {
 }
 
 // Gráfico 2: mismo criterio, pero diario/semanal en vez de mensual.
-async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad) {
+async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad, dia) {
   granularidadTodasNacional = granularidad;
   const tituloEl = document.getElementById('titulo-grafico-seguimiento-todas');
 
   if (companiaSeleccionada === 'GENERAL') {
     tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
     const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional', {
-      fecha_desde: obtenerFechaDesdeSelector('todas'),
+      fecha_desde: dia ? null : obtenerFechaDesdeSelector('todas'),
     }));
+    const filasUsar = dia ? (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia)) : (filas || []);
     const agrupado = {};
-    (filas || []).forEach(f => {
-      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+    filasUsar.forEach(f => {
+      const clave = dia ? f.fecha.slice(0, 7) : (granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
       if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
       agrupado[clave].cfn += Number(f.valor_cfn || 0);
       agrupado[clave].em += Number(f.valor_em || 0);
@@ -330,12 +330,13 @@ async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad
       agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
     });
     const claves = Object.keys(agrupado).sort();
+    const sufCfn = dia ? ` (del 01 al ${dia})` : '';
     ajustarAnchoScroll('scroll-grafico-seguimiento-nacional-todas', claves.length);
     dibujarMultiSeguimiento('grafico-seguimiento-nacional-todas', claves,
       [
-        { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
-        { etiqueta: 'Electrónica Megatone SRL', datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
-        { etiqueta: 'Confina SRL', datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
+        { etiqueta: 'CFN SRL' + sufCfn, datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
+        { etiqueta: 'Electrónica Megatone SRL' + sufCfn, datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
+        { etiqueta: 'Confina SRL' + sufCfn, datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
       ],
       [
         { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
@@ -380,6 +381,13 @@ async function cargarSelectorEstudios() {
   selector.innerHTML = estudios.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
   selector.addEventListener('change', () => cargarVistaEstudio(selector.value));
   if (estudios.length) cargarVistaEstudio(estudios[0].id);
+
+  const selectorRd = document.getElementById('rd-nacional-estudio');
+  if (selectorRd) {
+    selectorRd.innerHTML = '<option value="">Todos (nacional)</option>' +
+      estudios.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+    selectorRd.addEventListener('change', () => cargarRdNacional(granularidadRdNacional, diaRdNacional));
+  }
 }
 
 async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
@@ -429,11 +437,9 @@ document.getElementById('selector-compania-estudio').addEventListener('change', 
 
 async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
   const tituloRecupero = document.getElementById('titulo-grafico-estudio-recupero');
-  const tituloSeguimiento = document.getElementById('titulo-grafico-seguimiento-estudio');
 
   if (companiaSeleccionada === 'GENERAL') {
-    tituloRecupero.textContent = 'Recupero mensual — total / judicial / extrajudicial';
-    tituloSeguimiento.textContent = 'Seguimiento del recupero — este estudio';
+    tituloRecupero.textContent = 'Recupero Mensual — Total / Judicial / Extrajudicial';
 
     const filas = await consultarPaginado(() => supabaseClient
       .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
@@ -443,12 +449,9 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
     dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
       porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
       porParametro('CAUSAS CON PAGOS JUD.'), porParametro('CAUSAS CON PAGOS EXT.'));
-
-    cargarSeguimiento('estudio', granularidadPorObjetivo['estudio'] || 'diario', estudioId);
   } else {
     const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-    tituloRecupero.textContent = `Recupero mensual — ${nombreCia} (este estudio)`;
-    tituloSeguimiento.textContent = `Seguimiento del recupero — ${nombreCia} (este estudio)`;
+    tituloRecupero.textContent = `Recupero Mensual — ${nombreCia} (Este Estudio)`;
 
     const filas = await consultarPaginado(() => supabaseClient
       .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
@@ -465,26 +468,6 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
     dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
       meses.map(m => porJud[m] || 0), meses.map(m => porExt[m] || 0),
       meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
-
-    const granularidad = granularidadPorObjetivo['estudio'] || 'diario';
-    const filasDiario = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
-      compania_filtro: companiaSeleccionada,
-      estudio_id_filtro: estudioId,
-      fecha_desde: obtenerFechaDesdeSelector('estudio'),
-    }));
-    const agrupado = {};
-    (filasDiario || []).forEach(f => {
-      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-      if (f.tipo === 'JUDICIAL') { agrupado[clave].judicial += Number(f.valor || 0); agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0); }
-      else if (f.tipo === 'EXTRAJUDICIAL') { agrupado[clave].extrajudicial += Number(f.valor || 0); agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0); }
-    });
-    const clavesDiario = Object.keys(agrupado).sort();
-    const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-    ajustarAnchoScroll('scroll-grafico-seguimiento-estudio', clavesDiario.length);
-    dibujarSeguimientoJudExtra('grafico-seguimiento-estudio', clavesDiario,
-      clavesDiario.map(c => agrupado[c].judicial), clavesDiario.map(c => agrupado[c].extrajudicial),
-      clavesDiario.map(c => agrupado[c].fichasJudicial), clavesDiario.map(c => agrupado[c].fichasExtrajudicial), sufijo);
   }
 }
 
@@ -581,8 +564,6 @@ async function cargarVistaEmpresa(compania) {
     meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExt[m] || 0),
     meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExt[m] || 0));
 
-  cargarSeguimientoEmpresa(compania, granularidadEmpresa);
-
   // ---- Detalle por estudio (para esta compañía) ----
   const { data: baseEstCompania } = await supabaseClient
     .from('base_gral_por_estudio_compania')
@@ -608,38 +589,10 @@ async function cargarVistaEmpresa(compania) {
 
   // ---- Cédulas de sentencia / liquidaciones / embargos (para esta compañía) ----
   const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[compania];
-  document.getElementById('titulo-grafico-pasos-empresa').textContent = `Cédulas de sentencia / liquidaciones / embargos — ${nombreCia}`;
+  document.getElementById('titulo-grafico-pasos-empresa').textContent = `Cédulas De Sentencia / Liquidaciones / Embargos — ${nombreCia}`;
   cargarPasosDinamico('grafico-pasos-empresa', compania, null);
 }
 
-async function cargarSeguimientoEmpresa(compania, granularidad) {
-  granularidadEmpresa = granularidad;
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
-    compania_filtro: compania,
-    estudio_id_filtro: null,
-    fecha_desde: obtenerFechaDesdeSelector('empresa'),
-  }));
-
-  const agrupado = {};
-  (filas || []).forEach(f => {
-    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-    if (f.tipo === 'JUDICIAL') {
-      agrupado[clave].judicial += Number(f.valor || 0);
-      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
-    } else if (f.tipo === 'EXTRAJUDICIAL') {
-      agrupado[clave].extrajudicial += Number(f.valor || 0);
-      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
-    }
-  });
-  const claves = Object.keys(agrupado).sort();
-  const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-  ajustarAnchoScroll('scroll-grafico-seguimiento-empresa', claves.length);
-  dibujarSeguimientoJudExtra('grafico-seguimiento-empresa', claves,
-    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
-    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
-    sufijo);
-}
 
 // ============================================================
 // SEGUIMIENTO DIARIO/SEMANAL DEL RECUPERO (nacional y por estudio,
@@ -650,7 +603,6 @@ async function cargarSeguimientoEmpresa(compania, granularidad) {
 // canvas dibujarlo.
 const CONFIG_SEGUIMIENTO = {
   'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
-  'estudio': { compania: 'TOTAL', esEstudio: true, canvas: 'grafico-seguimiento-estudio' },
 };
 const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
 let estudioSeleccionadoActual = null;
@@ -719,7 +671,7 @@ function llenarSelectorDeDias(idSelect) {
   select.dataset.lleno = '1';
 }
 
-async function cargarSeguimiento(objetivo, granularidad, estudioId) {
+async function cargarSeguimiento(objetivo, granularidad, estudioId, dia) {
   const config = CONFIG_SEGUIMIENTO[objetivo];
   if (!config) return;
   granularidadPorObjetivo[objetivo] = granularidad;
@@ -728,23 +680,31 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: config.compania,
     estudio_id_filtro: config.esEstudio ? estudioId : null,
-    fecha_desde: obtenerFechaDesdeSelector(objetivo),
+    fecha_desde: dia ? null : obtenerFechaDesdeSelector(objetivo),
   }));
 
-  const agrupado = {};
-  (filas || []).forEach(f => {
-    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-    if (f.tipo === 'JUDICIAL') {
-      agrupado[clave].judicial += Number(f.valor || 0);
-      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
-    } else if (f.tipo === 'EXTRAJUDICIAL') {
-      agrupado[clave].extrajudicial += Number(f.valor || 0);
-      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
-    }
-  });
-  const claves = Object.keys(agrupado).sort();
-  const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  let claves, agrupado, sufijo;
+  if (dia) {
+    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
+    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
+    claves = Object.keys(agrupado).sort();
+    sufijo = ` (del 01 al ${dia})`;
+  } else {
+    agrupado = {};
+    (filas || []).forEach(f => {
+      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
+      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
+      if (f.tipo === 'JUDICIAL') {
+        agrupado[clave].judicial += Number(f.valor || 0);
+        agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
+      } else if (f.tipo === 'EXTRAJUDICIAL') {
+        agrupado[clave].extrajudicial += Number(f.valor || 0);
+        agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
+      }
+    });
+    claves = Object.keys(agrupado).sort();
+    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
+  }
   ajustarAnchoScroll('scroll-' + config.canvas, claves.length);
   dibujarSeguimientoJudExtra(config.canvas, claves,
     claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
@@ -752,40 +712,6 @@ async function cargarSeguimiento(objetivo, granularidad, estudioId) {
     sufijo);
 }
 
-let granularidadRdCompanias = 'diario';
-
-async function cargarRecuperoDiarioCompanias(granularidad) {
-  granularidadRdCompanias = granularidad;
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional', {
-    fecha_desde: obtenerFechaDesdeSelector('rd-companias'),
-  }));
-  const agrupado = {};
-  (filas || []).forEach(f => {
-    const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-    if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
-    agrupado[clave].cfn += Number(f.valor_cfn || 0);
-    agrupado[clave].em += Number(f.valor_em || 0);
-    agrupado[clave].confina += Number(f.valor_confina || 0);
-    agrupado[clave].fCfn += Number(f.cantidad_cfn || 0);
-    agrupado[clave].fEm += Number(f.cantidad_em || 0);
-    agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
-  });
-  const claves = Object.keys(agrupado).sort();
-  ajustarAnchoScroll('scroll-grafico-rd-companias', claves.length);
-  dibujarMultiSeguimiento('grafico-rd-companias', claves,
-    [
-      { etiqueta: 'Total', datos: claves.map(c => agrupado[c].cfn + agrupado[c].em + agrupado[c].confina), color: COLOR_BRONCE },
-      { etiqueta: 'CFN SRL', datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
-      { etiqueta: 'Electrónica Megatone SRL', datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
-      { etiqueta: 'Confina SRL', datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
-    ],
-    [
-      { etiqueta: 'Fichas total', datos: claves.map(c => agrupado[c].fCfn + agrupado[c].fEm + agrupado[c].fConfina), color: COLOR_BRONCE },
-      { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
-      { etiqueta: 'Fichas Megatone', datos: claves.map(c => agrupado[c].fEm), color: COLOR_EM },
-      { etiqueta: 'Fichas Confina', datos: claves.map(c => agrupado[c].fConfina), color: COLOR_CONFINA },
-    ]);
-}
 
 // ---- Seguimiento del Recupero — Nacional (con modo "comparar día") ----
 let granularidadRdNacional = 'diario';
@@ -794,18 +720,22 @@ let diaRdNacional = '';
 async function cargarRdNacional(granularidad, dia) {
   granularidadRdNacional = granularidad;
   diaRdNacional = dia;
+  const estudioId = document.getElementById('rd-nacional-estudio').value || null;
+  const nombreEstudio = estudioId ? document.querySelector(`#rd-nacional-estudio option[value="${estudioId}"]`)?.textContent : 'Nacional';
+  document.getElementById('titulo-grafico-rd-nacional').textContent = `Seguimiento Del Recupero — ${nombreEstudio}`;
+
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
     compania_filtro: 'TOTAL',
-    estudio_id_filtro: null,
+    estudio_id_filtro: estudioId,
     fecha_desde: dia ? null : obtenerFechaDesdeSelector('rd-nacional'),
   }));
 
   let claves, agrupado, sufijo;
   if (dia) {
-    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
     agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
     claves = Object.keys(agrupado).sort();
-    sufijo = ` (día ${dia})`;
+    sufijo = ` (del 01 al ${dia})`;
   } else {
     agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
     claves = Object.keys(agrupado).sort();
@@ -834,10 +764,10 @@ async function cargarRdDetalle() {
 
   let claves, agrupado, sufijo;
   if (dia) {
-    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) === Number(dia));
+    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
     agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
     claves = Object.keys(agrupado).sort();
-    sufijo = ` (día ${dia})`;
+    sufijo = ` (del 01 al ${dia})`;
   } else {
     agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
     claves = Object.keys(agrupado).sort();
@@ -887,10 +817,14 @@ async function cargarRdAcumuladoMes() {
   }
 
   const hoy = new Date();
-  const diaHoy = hoy.getDate();
+  const diaElegido = document.getElementById('selector-dia-rd-acumulado').value;
+  const diaLimite = diaElegido ? Number(diaElegido) : hoy.getDate();
+
+  document.getElementById('titulo-rd-acumulado').textContent =
+    `Recaudación Acumulada Del Mes — Comparativo (Del 1 Al ${String(diaLimite).padStart(2, '0')}, Mes Actual Primero)`;
 
   const mesesAtras = Number(document.querySelector('.selector-rango[data-objetivo="rd-acumulado"]')?.value) || 6;
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaHoy, meses_atras: mesesAtras }));
+  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaLimite, meses_atras: mesesAtras }));
 
   // acumulado[mes][compania][tipo] = valor ('combinado' = judicial + extrajudicial)
   const acumulado = {};
@@ -942,11 +876,20 @@ document.getElementById('rd-detalle-dia').addEventListener('change', cargarRdDet
 document.querySelectorAll('#rd-detalle-series input').forEach(cb => cb.addEventListener('change', cargarRdDetalle));
 document.querySelectorAll('#rd-acumulado-series input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
 document.querySelectorAll('#rd-acumulado-tipos input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
+document.getElementById('selector-dia-rd-acumulado').addEventListener('change', cargarRdAcumuladoMes);
+document.getElementById('selector-dia-nacional').addEventListener('change', (e) => {
+  diaNacional = e.target.value;
+  cargarSeguimiento('nacional', granularidadPorObjetivo['nacional'] || 'diario', null, diaNacional);
+});
+document.getElementById('selector-dia-todas').addEventListener('change', (e) => {
+  diaTodas = e.target.value;
+  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional, diaTodas);
+});
 
 function cargarTodosLosSeguimientos(esEstudio, estudioId) {
   Object.keys(CONFIG_SEGUIMIENTO)
     .filter(objetivo => CONFIG_SEGUIMIENTO[objetivo].esEstudio === esEstudio)
-    .forEach(objetivo => cargarSeguimiento(objetivo, granularidadPorObjetivo[objetivo] || 'diario', estudioId));
+    .forEach(objetivo => cargarSeguimiento(objetivo, granularidadPorObjetivo[objetivo] || 'diario', estudioId, objetivo === 'nacional' ? diaNacional : ''));
 }
 
 // Recarga el gráfico correspondiente a un objetivo, respetando la
@@ -957,16 +900,8 @@ function recargarGraficoPorObjetivo(objetivo, granularidad) {
     cargarRdAcumuladoMes();
     return;
   }
-  if (objetivo === 'empresa') {
-    cargarSeguimientoEmpresa(companiaSeleccionadaActual, granularidad);
-    return;
-  }
   if (objetivo === 'todas') {
-    cargarSeguimientoTodasNacional('GENERAL', granularidad);
-    return;
-  }
-  if (objetivo === 'rd-companias') {
-    cargarRecuperoDiarioCompanias(granularidad);
+    cargarSeguimientoTodasNacional('GENERAL', granularidad, diaTodas);
     return;
   }
   if (objetivo === 'rd-nacional') {
@@ -977,18 +912,8 @@ function recargarGraficoPorObjetivo(objetivo, granularidad) {
     cargarRdDetalle();
     return;
   }
-  if (objetivo === 'estudio') {
-    granularidadPorObjetivo['estudio'] = granularidad;
-    const companiaElegida = document.getElementById('selector-compania-estudio').value;
-    if (companiaElegida === 'GENERAL') {
-      cargarSeguimiento('estudio', granularidad, estudioSeleccionadoActual);
-    } else {
-      cargarGraficosEstudio(estudioSeleccionadoActual, companiaElegida);
-    }
-    return;
-  }
   const config = CONFIG_SEGUIMIENTO[objetivo];
-  if (config) cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null);
+  if (config) cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null, objetivo === 'nacional' ? diaNacional : '');
 }
 
 document.querySelectorAll('.selector-granularidad').forEach(selector => {
@@ -1100,7 +1025,6 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
         cargarSelectorEstudios();
         cargarVistaEmpresa(companiaSeleccionadaActual);
         cargarRdNacional(granularidadRdNacional, diaRdNacional);
-        cargarRecuperoDiarioCompanias(granularidadRdCompanias);
         cargarRdDetalle();
         cargarRdAcumuladoMes();
       } else {
@@ -1487,6 +1411,64 @@ function dibujarBarras(id, etiquetas, datos, color, extra) {
     options: { responsive: true, plugins: { legend: { display: !!extra } } },
   });
 }
+
+// Genera una paleta de colores distinguibles para tortas con muchas
+// porciones (hasta 25 estudios).
+function generarPaletaColores(cantidad) {
+  const colores = [];
+  for (let i = 0; i < Math.max(cantidad, 1); i++) {
+    colores.push(`hsl(${Math.round((360 / Math.max(cantidad, 1)) * i)}, 55%, 45%)`);
+  }
+  return colores;
+}
+
+// Torta "Recupero del último mes cerrado" — por estudio (25 porciones) o
+// por empresa (3 porciones: CFN/Megatone/Confina), con checkbox para elegir
+// Total / Judicial / Extrajudicial.
+async function cargarTortaEstudios() {
+  const modo = document.getElementById('torta-estudios-modo').value;
+  const tipoElegido = document.querySelector('#torta-estudios-tipos input:checked')?.value || 'combinado';
+
+  const { data: mesesData } = await supabaseClient.from('matriz_mensual').select('mes').order('mes', { ascending: false }).limit(1);
+  const ultimoMes = mesesData && mesesData.length ? mesesData[0].mes : null;
+  if (!ultimoMes) { dibujarTorta('grafico-barras-estudios', [], [], []); return; }
+
+  if (modo === 'estudio') {
+    if (tipoElegido === 'combinado') {
+      const { data: filas } = await supabaseClient.from('base_gral').select('valor, estudios(nombre)').eq('parametro', 'RECUPERO ULT.MES CERRADO');
+      const filtradas = (filas || []).filter(f => Number(f.valor) > 0).sort((a, b) => b.valor - a.valor);
+      dibujarTorta('grafico-barras-estudios', filtradas.map(f => f.estudios.nombre), filtradas.map(f => Number(f.valor)), generarPaletaColores(filtradas.length));
+    } else {
+      const parametro = tipoElegido === 'JUDICIAL' ? 'RECUPERO JUDICIAL' : 'RECUPERO EXTRA';
+      const { data: filas } = await supabaseClient.from('matriz_mensual').select('valor, estudios(nombre)').eq('parametro', parametro).eq('mes', ultimoMes);
+      const filtradas = (filas || []).filter(f => Number(f.valor) > 0).sort((a, b) => b.valor - a.valor);
+      dibujarTorta('grafico-barras-estudios', filtradas.map(f => f.estudios.nombre), filtradas.map(f => Number(f.valor)), generarPaletaColores(filtradas.length));
+    }
+  } else {
+    const parametros = tipoElegido === 'combinado'
+      ? ['RECUPERO CFN', 'RECUPERO EM', 'RECUPERO CONFINA']
+      : tipoElegido === 'JUDICIAL'
+        ? ['RECUPERO CFN JUD.', 'RECUPERO EM JUD.', 'RECUPERO CONFINA JUD.']
+        : ['RECUPERO CFN EXT.', 'RECUPERO EM EXT.', 'RECUPERO CONFINA EXT.'];
+    const { data: filas } = await supabaseClient.from('matriz_mensual').select('parametro, valor').in('parametro', parametros).eq('mes', ultimoMes);
+    const sumas = {};
+    (filas || []).forEach(f => { sumas[f.parametro] = (sumas[f.parametro] || 0) + Number(f.valor); });
+    const nombres = ['CFN', 'Electrónica Megatone', 'Confina'];
+    dibujarTorta('grafico-barras-estudios', nombres, parametros.map(p => sumas[p] || 0), [COLOR_CFN, COLOR_EM, COLOR_CONFINA]);
+  }
+}
+
+document.getElementById('torta-estudios-modo').addEventListener('change', cargarTortaEstudios);
+document.querySelectorAll('#torta-estudios-tipos input').forEach(cb => {
+  cb.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      document.querySelectorAll('#torta-estudios-tipos input').forEach(otro => { if (otro !== e.target) otro.checked = false; });
+    } else {
+      e.target.checked = true; // siempre tiene que quedar uno tildado
+    }
+    cargarTortaEstudios();
+  });
+});
 
 function dibujarTorta(id, etiquetas, datos, colores) {
   destruirSiExiste(id);
