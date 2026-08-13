@@ -79,18 +79,33 @@ function mostrarApp(session) {
 
   document.getElementById('app').classList.remove('oculto');
   document.getElementById('usuario-email').textContent = session.user.email;
-  cargarVistaResumen();
-  cargarSelectorEstudios();
-  cargarVistaEmpresa('CFN');
   llenarSelectorDeDias('rd-nacional-dia');
   llenarSelectorDeDias('rd-detalle-dia');
   llenarSelectorDeDias('selector-dia-nacional');
   llenarSelectorDeDias('selector-dia-todas');
   llenarSelectorDeDias('selector-dia-rd-acumulado');
-  cargarRdNacional('diario', '');
+  preseleccionarDiaHoy();
+  cargarVistaResumen();
+  cargarSelectorEstudios();
+  cargarVistaEmpresa('CFN');
+  cargarRdNacional('diario', diaRdNacional);
   cargarRdDetalle();
   cargarRdAcumuladoMes();
   cargarLogCargas();
+}
+
+// Por defecto, los gráficos con selector de día arrancan mostrando el
+// comparativo "del 1 al día de hoy" (en vez de la línea de tiempo diaria
+// continua) — se preselecciona el día actual en cada selector.
+function preseleccionarDiaHoy() {
+  const diaHoy = String(new Date().getDate());
+  diaNacional = diaHoy;
+  diaTodas = diaHoy;
+  diaRdNacional = diaHoy;
+  ['selector-dia-nacional', 'selector-dia-todas', 'rd-nacional-dia', 'rd-detalle-dia'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = diaHoy;
+  });
 }
 
 document.getElementById('form-cambiar-password').addEventListener('submit', async (e) => {
