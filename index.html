@@ -345,6 +345,7 @@
               <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
               <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
             </div>
+            <label class="selector-dia"><input type="checkbox" id="rd-acumulado-fichas"> Mostrar cantidad de fichas</label>
             <select id="selector-dia-rd-acumulado" class="selector-dia-mes">
               <option value="">Hasta hoy</option>
             </select>
@@ -457,6 +458,16 @@
           <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
           <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
           <p id="rd-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Corregir Estudio Por Ficha (Reportes De Casos Puntuales)</summary>
+        <p class="ayuda">Uso puntual: subí un archivo con las columnas "Ficha" y "Sucursal" (o "Estudio") — actualiza el estudio SOLO de las fichas activas que vengan en el archivo, pisando lo calculado automáticamente por abogado/juzgado. Las fichas dadas de baja no se tocan. Útil para casos como abogados que manejan causas de varias sucursales.</p>
+        <form id="form-backfill-estudio" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha + Sucursal <input type="file" id="backfill-estudio-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-estudio">Corregir Estudio</button>
+          <p id="backfill-estudio-estado" class="mensaje-estado"></p>
         </form>
       </details>
 
