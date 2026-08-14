@@ -813,6 +813,7 @@ const NOMBRES_MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 async function cargarRdAcumuladoMes() {
   const companiasElegidas = Array.from(document.querySelectorAll('#rd-acumulado-series input:checked')).map(el => el.value);
   const tiposElegidos = Array.from(document.querySelectorAll('#rd-acumulado-tipos input:checked')).map(el => el.value);
+  const mostrarFichas = document.getElementById('rd-acumulado-fichas').checked;
   const columnasCompania = [
     { valor: 'total', etiqueta: 'Total', compania: 'TOTAL' },
     { valor: 'CFN', etiqueta: 'CFN', compania: 'CFN' },
@@ -841,13 +842,19 @@ async function cargarRdAcumuladoMes() {
   const mesesAtras = Number(document.querySelector('.selector-rango[data-objetivo="rd-acumulado"]')?.value) || 6;
   const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaLimite, meses_atras: mesesAtras }));
 
-  // acumulado[mes][compania][tipo] = valor ('combinado' = judicial + extrajudicial)
+  // acumulado[mes][compania][tipo] = { valor, fichas } ('combinado' = judicial + extrajudicial)
   const acumulado = {};
   (filas || []).forEach(f => {
     if (!acumulado[f.mes]) acumulado[f.mes] = {};
-    if (!acumulado[f.mes][f.compania]) acumulado[f.mes][f.compania] = { JUDICIAL: 0, EXTRAJUDICIAL: 0 };
+    if (!acumulado[f.mes][f.compania]) {
+      acumulado[f.mes][f.compania] = {
+        JUDICIAL: { valor: 0, fichas: 0 },
+        EXTRAJUDICIAL: { valor: 0, fichas: 0 },
+      };
+    }
     if (f.tipo === 'JUDICIAL' || f.tipo === 'EXTRAJUDICIAL') {
-      acumulado[f.mes][f.compania][f.tipo] += Number(f.valor || 0);
+      acumulado[f.mes][f.compania][f.tipo].valor += Number(f.valor || 0);
+      acumulado[f.mes][f.compania][f.tipo].fichas += Number(f.cantidad_fichas || 0);
     }
   });
 
@@ -855,12 +862,16 @@ async function cargarRdAcumuladoMes() {
   const otrosMeses = Object.keys(acumulado).filter(m => m !== mesActual).sort().reverse();
   const mesesOrdenados = [mesActual, ...otrosMeses];
 
-  // Columnas = combinación compañía x tipo elegidos.
+  // Columnas = combinación compañía x tipo elegidos — cada una con su columna
+  // de monto y, si está tildado el checkbox, una columna extra de fichas al lado.
   const columnas = [];
-  columnasCompania.forEach(c => columnasTipo.forEach(t => columnas.push({
-    etiqueta: t.valor === 'combinado' ? c.etiqueta : `${c.etiqueta} — ${t.etiqueta}`,
-    compania: c.compania, tipo: t.valor,
-  })));
+  columnasCompania.forEach(c => columnasTipo.forEach(t => {
+    const etiquetaBase = t.valor === 'combinado' ? c.etiqueta : `${c.etiqueta} — ${t.etiqueta}`;
+    columnas.push({ etiqueta: etiquetaBase, compania: c.compania, tipo: t.valor, esFichas: false });
+    if (mostrarFichas) {
+      columnas.push({ etiqueta: `${etiquetaBase} (fichas)`, compania: c.compania, tipo: t.valor, esFichas: true });
+    }
+  }));
 
   document.getElementById('rd-acumulado-encabezado').innerHTML =
     '<th>Mes</th>' + columnas.map(c => `<th class="numero">${c.etiqueta}</th>`).join('');
@@ -875,9 +886,14 @@ async function cargarRdAcumuladoMes() {
     return `<tr${mes === mesActual ? ' class="fila-mes-actual"' : ''}>
       <td>${etiquetaMes}</td>
       ${columnas.map(c => {
-        const datosMes = datosCia[c.compania] || { JUDICIAL: 0, EXTRAJUDICIAL: 0 };
-        const valor = c.tipo === 'combinado' ? (datosMes.JUDICIAL + datosMes.EXTRAJUDICIAL) : datosMes[c.tipo];
-        return `<td class="numero">${formateadorMoneda.format(valor || 0)}</td>`;
+        const datosMes = datosCia[c.compania] || { JUDICIAL: { valor: 0, fichas: 0 }, EXTRAJUDICIAL: { valor: 0, fichas: 0 } };
+        if (c.tipo === 'combinado') {
+          const valor = datosMes.JUDICIAL.valor + datosMes.EXTRAJUDICIAL.valor;
+          const fichas = datosMes.JUDICIAL.fichas + datosMes.EXTRAJUDICIAL.fichas;
+          return `<td class="numero">${c.esFichas ? formateadorNumero.format(fichas) : formateadorMoneda.format(valor)}</td>`;
+        }
+        const dato = datosMes[c.tipo] || { valor: 0, fichas: 0 };
+        return `<td class="numero">${c.esFichas ? formateadorNumero.format(dato.fichas) : formateadorMoneda.format(dato.valor)}</td>`;
       }).join('')}
     </tr>`;
   }).join('');
@@ -891,6 +907,7 @@ document.getElementById('rd-detalle-dia').addEventListener('change', cargarRdDet
 document.querySelectorAll('#rd-detalle-series input').forEach(cb => cb.addEventListener('change', cargarRdDetalle));
 document.querySelectorAll('#rd-acumulado-series input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
 document.querySelectorAll('#rd-acumulado-tipos input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
+document.getElementById('rd-acumulado-fichas').addEventListener('change', cargarRdAcumuladoMes);
 document.getElementById('selector-dia-rd-acumulado').addEventListener('change', cargarRdAcumuladoMes);
 document.getElementById('selector-dia-nacional').addEventListener('change', (e) => {
   diaNacional = e.target.value;
@@ -1128,6 +1145,40 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
     estadoEl.className = 'mensaje-estado ok';
     cargarLogCargas();
     esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+document.getElementById('form-backfill-estudio').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('backfill-estudio-estado');
+  const boton = document.getElementById('btn-backfill-estudio');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('backfill-estudio-archivo').files[0]);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-estudio`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el estudio de esas fichas ya está corregido.');
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
     estadoEl.className = 'mensaje-estado error';
