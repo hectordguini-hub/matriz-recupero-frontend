@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GERENCIAR S.R.L. — Matriz de Recupero</title>
-<link rel="icon" href="logo-gerenciar.png">
+<link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -165,7 +165,7 @@
         <table id="tabla-base-gral">
           <thead>
             <tr>
-              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>Recupero promedio últ. semestre</th><th>En gestión</th>
               <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
             </tr>
           </thead>
@@ -458,6 +458,16 @@
           <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
           <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
           <p id="rd-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Cancelados (Bajas)</summary>
+        <p class="ayuda">Subí un archivo con la columna "Ficha" — da de baja esas causas (mismo efecto que una baja en la carga mensual normal), sin tener que pasar por el formulario completo. Las fichas ya inactivas no se tocan de nuevo.</p>
+        <form id="form-backfill-cancelados" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha <input type="file" id="backfill-cancelados-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-cancelados">Cargar Cancelados</button>
+          <p id="backfill-cancelados-estado" class="mensaje-estado"></p>
         </form>
       </details>
 
