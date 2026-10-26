@@ -216,11 +216,29 @@ async function cargarVistaResumen() {
     porEstudio[nombre] = porEstudio[nombre] || {};
     porEstudio[nombre][f.parametro] = Number(f.valor);
   });
+
+  // Recupero promedio de los últimos 6 meses cerrados (judicial + extrajudicial), por estudio.
+  const ultimosSeisMeses = meses.slice(-6);
+  const cantidadMesesSemestre = ultimosSeisMeses.length || 1;
+  const totalSemestralPorEstudio = {};
+  if (ultimosSeisMeses.length) {
+    const { data: semestral } = await supabaseClient
+      .from('matriz_mensual')
+      .select('valor, estudios(nombre)')
+      .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
+      .in('mes', ultimosSeisMeses);
+    (semestral || []).forEach(f => {
+      const nombre = f.estudios.nombre;
+      totalSemestralPorEstudio[nombre] = (totalSemestralPorEstudio[nombre] || 0) + Number(f.valor);
+    });
+  }
+
   const filasTabla = Object.entries(porEstudio).sort((a, b) => (b[1]['RECUPERO ULT.MES CERRADO'] || 0) - (a[1]['RECUPERO ULT.MES CERRADO'] || 0));
   document.querySelector('#tabla-base-gral tbody').innerHTML = filasTabla.map(([nombre, valores]) => `
     <tr>
       <td>${nombre}</td>
       <td class="numero">${formateadorMoneda.format(valores['RECUPERO ULT.MES CERRADO'] || 0)}</td>
+      <td class="numero">${formateadorMoneda.format((totalSemestralPorEstudio[nombre] || 0) / cantidadMesesSemestre)}</td>
       <td class="numero">${formateadorNumero.format(valores['EN GESTIÓN'] || 0)}</td>
       <td class="numero">${formateadorNumero.format(valores['INICIADAS'] || 0)}</td>
       <td class="numero">${formateadorNumero.format(valores['CON EMBARGO HABERES'] || 0)}</td>
@@ -259,7 +277,9 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'Causas en gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Causas iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
   ];
   document.getElementById('kpis-generales').innerHTML = kpis.map(k => `
@@ -436,7 +456,9 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorFn('INICIADAS')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorFn('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
@@ -570,7 +592,9 @@ async function cargarVistaEmpresa(compania) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas', valor: formateadorNumero.format(valorBase('INICIADAS')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorBase('INICIADAS')) },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorBase('INICIADAS TOTALES')) },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorBase('CANCELADAS')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
@@ -1145,6 +1169,40 @@ document.getElementById('form-incremental').addEventListener('submit', async (e)
     estadoEl.className = 'mensaje-estado ok';
     cargarLogCargas();
     esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+document.getElementById('form-backfill-cancelados').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('backfill-cancelados-estado');
+  const boton = document.getElementById('btn-backfill-cancelados');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('backfill-cancelados-archivo').files[0]);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-cancelados`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — las causas indicadas ya están dadas de baja.');
   } catch (err) {
     estadoEl.textContent = `Error: ${err.message}`;
     estadoEl.className = 'mensaje-estado error';
