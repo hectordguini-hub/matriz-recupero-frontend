@@ -252,6 +252,34 @@ def procesar_pasos_mensual(archivo_pasos_mes, mes, dict_juzgado_a_estudio, dict_
     return pd.DataFrame(filas), df_detalle
 
 
+def leer_ultimo_paso_archivo(archivo_pasos):
+    """Lee un archivo de Pasos Procesales (el mismo que se usa en la carga mensual)
+    y devuelve, por ficha, su paso más reciente: DataFrame con
+    ficha, fecha_ultimo_paso (date) y ultimo_paso (texto).
+    Si una ficha tiene varios pasos, se queda con el de fecha más nueva (y,
+    a igual fecha, el último que figura en el archivo)."""
+    df = pd.read_excel(archivo_pasos)
+    col_ficha = 'Ficha' if 'Ficha' in df.columns else encontrar_columna(df.columns, ['Ficha'], palabras_clave_alguna=['ficha'])
+    col_paso = 'Paso Procesal' if 'Paso Procesal' in df.columns else None
+    col_f = encontrar_columna(df.columns, ['Fecha Paso Procesal', 'F. PProcesal', 'F.PProcesal'],
+                              palabras_clave_todas=[['fech', 'paso']], palabras_clave_alguna=['fech'])
+    if not col_ficha or not col_f:
+        raise ValueError("El archivo de pasos no trae las columnas 'Ficha' y 'Fecha Paso Procesal'")
+    fechas = df[col_f]
+    if not pd.api.types.is_datetime64_any_dtype(fechas):
+        fechas = pd.to_datetime(fechas, errors='coerce', dayfirst=True)
+    out = pd.DataFrame({
+        'ficha': df[col_ficha].astype(str).str.strip(),
+        'fecha_ultimo_paso': fechas,
+        'ultimo_paso': df[col_paso].astype(str).str.strip() if col_paso else '',
+    })
+    out = out[(out['ficha'] != '') & (out['ficha'].str.lower() != 'nan') & out['fecha_ultimo_paso'].notna()].copy()
+    out['_orden'] = range(len(out))
+    out = out.sort_values(['ficha', 'fecha_ultimo_paso', '_orden']).groupby('ficha', as_index=False).tail(1)
+    out['fecha_ultimo_paso'] = out['fecha_ultimo_paso'].dt.date
+    return out[['ficha', 'fecha_ultimo_paso', 'ultimo_paso']].reset_index(drop=True)
+
+
 def calcular_causas_recibidas_mensual(df_cartera_activa_e_inactiva, mes, estudios_validos=None):
     estudios_validos = estudios_validos or ESTUDIOS_VALIDOS
     """CAUSAS RECIBIDAS / SIN INICIAR del mes, a partir de fecha_inicio_estudio
