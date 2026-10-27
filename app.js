@@ -1231,6 +1231,40 @@ document.getElementById('form-backfill-cancelados').addEventListener('submit', a
   }
 });
 
+document.getElementById('form-ultimo-paso').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('ultimo-paso-estado');
+  const boton = document.getElementById('btn-ultimo-paso');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  Array.from(document.getElementById('ultimo-paso-archivos').files).forEach(f => formData.append('archivos', f));
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/cargar-ultimo-paso`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el último paso procesal de cada causa quedó cargado.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 document.getElementById('form-backfill-estudio').addEventListener('submit', async (e) => {
   e.preventDefault();
   const estadoEl = document.getElementById('backfill-estudio-estado');
