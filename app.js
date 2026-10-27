@@ -280,6 +280,7 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
     { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
     { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
   ];
   document.getElementById('kpis-generales').innerHTML = kpis.map(k => `
@@ -459,6 +460,7 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
     { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
     { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
     { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorFn('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
@@ -595,6 +597,7 @@ async function cargarVistaEmpresa(compania) {
     { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorBase('INICIADAS')) },
     { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorBase('INICIADAS TOTALES')) },
     { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorBase('CANCELADAS')) },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorBase('CANCELADAS SIN INICIAR')) },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
   ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
