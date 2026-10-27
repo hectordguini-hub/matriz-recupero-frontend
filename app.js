@@ -532,7 +532,7 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
 async function cargarCaducidadEstudio(estudioId, companiaSeleccionada) {
   const nota = document.getElementById('nota-caducidad-estudio');
   let consulta = supabaseClient.from('caducidad_estudio_compania')
-    .select('compania, al_dia, por_vencer, sin_movimiento_6m, total, fecha_corte')
+    .select('compania, al_dia, por_vencer, sin_movimiento_6m, total, fecha_corte, limite_4m, limite_6m')
     .eq('estudio_id', estudioId);
   if (companiaSeleccionada !== 'GENERAL') consulta = consulta.eq('compania', companiaSeleccionada);
   const { data, error } = await consulta;
@@ -543,6 +543,7 @@ async function cargarCaducidadEstudio(estudioId, companiaSeleccionada) {
   const total = suma('total');
   const corte = filas.map(f => f.fecha_corte).filter(Boolean).sort().pop();
   const corteTxt = corte ? corte.split('-').reverse().join('/') : '—';
+  caducidadActual = { estudioId, compania: companiaSeleccionada, corte, limite4: filas[0]?.limite_4m || null, limite6: filas[0]?.limite_6m || null };
   const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
   nota.textContent = `${nombreCia ? nombreCia + ' · ' : ''}Plazo de caducidad: 6 meses. Corte de pasos procesales: ${corteTxt}. Pasá el mouse por cada barra para ver el total.`;
 
@@ -573,6 +574,70 @@ async function cargarCaducidadEstudio(estudioId, companiaSeleccionada) {
     },
   });
 }
+
+var caducidadActual = null;
+
+// Descarga en Excel de las causas de una categoría del riesgo de caducidad
+// (al día / por vencer / sin paso en 6 meses) del estudio y compañía elegidos.
+async function descargarCaducidadExcel(categoria) {
+  const estadoEl = document.getElementById('estado-descarga-caducidad');
+  const ca = caducidadActual;
+  if (!ca || !ca.limite4 || !ca.limite6) { estadoEl.textContent = 'No hay datos de caducidad para descargar.'; return; }
+  const botones = document.querySelectorAll('[data-caducidad]');
+  botones.forEach(b => b.disabled = true);
+  estadoEl.textContent = 'Preparando el archivo…';
+  try {
+    const columnas = 'ficha, compania, nro_expediente, juzgado, nivel, empresa, embargo, deuda_total, fecha_inicio_estudio, fecha_ultimo_pago, fecha_ultimo_paso, ultimo_paso';
+    const construir = () => {
+      let q = supabaseClient.from('cartera_causas').select(columnas)
+        .eq('estudio_id', ca.estudioId).eq('activa', true);
+      if (ca.compania !== 'GENERAL') q = q.eq('compania', ca.compania);
+      if (categoria === 'al_dia') q = q.gt('fecha_ultimo_paso', ca.limite4);
+      else if (categoria === 'por_vencer') q = q.lte('fecha_ultimo_paso', ca.limite4).gt('fecha_ultimo_paso', ca.limite6);
+      else q = q.or(`fecha_ultimo_paso.is.null,fecha_ultimo_paso.lte.${ca.limite6}`);
+      return q.order('ficha', { ascending: true });
+    };
+    const filas = await consultarPaginado(construir);
+    if (!filas.length) { estadoEl.textContent = 'No hay causas en esta categoría.'; return; }
+
+    const corteMs = ca.corte ? Date.parse(ca.corte) : null;
+    const nombresCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
+    const datos = filas.map(f => ({
+      'Ficha': f.ficha,
+      'Compañía': nombresCia[f.compania] || f.compania,
+      'Nro. expediente': f.nro_expediente && f.nro_expediente !== 'nan' ? f.nro_expediente : '',
+      'Juzgado': f.juzgado || '',
+      'Nivel': (f.nivel || '').trim(),
+      'Empresa (empleador)': f.empresa || '',
+      'Embargo': f.embargo || '',
+      'Deuda total': f.deuda_total === null ? null : Number(f.deuda_total),
+      'Fecha inicio estudio': f.fecha_inicio_estudio || '',
+      'Fecha último pago': f.fecha_ultimo_pago || '',
+      'Fecha último paso': f.fecha_ultimo_paso || '',
+      'Último paso procesal': f.ultimo_paso || '',
+      'Días desde el último paso (al corte)': f.fecha_ultimo_paso && corteMs ? Math.round((corteMs - Date.parse(f.fecha_ultimo_paso)) / 86400000) : '',
+    }));
+    const hoja = XLSX.utils.json_to_sheet(datos);
+    hoja['!cols'] = [10, 20, 16, 24, 26, 30, 8, 14, 14, 14, 14, 30, 16].map(w => ({ wch: w }));
+    const libro = XLSX.utils.book_new();
+    const nombreHoja = { al_dia: 'Al día', por_vencer: 'Por vencer', sin_movimiento: 'Sin paso 6 meses' }[categoria];
+    XLSX.utils.book_append_sheet(libro, hoja, nombreHoja);
+    const selector = document.getElementById('selector-estudio');
+    const estudio = (selector.selectedOptions[0]?.textContent || 'estudio').trim().replace(/[^\w\-]+/g, '_');
+    const cia = ca.compania === 'GENERAL' ? 'todas' : ca.compania;
+    const sufijo = { al_dia: 'al_dia', por_vencer: 'por_vencer', sin_movimiento: 'sin_paso_6_meses' }[categoria];
+    XLSX.writeFile(libro, `caducidad_${sufijo}_${estudio}_${cia}_corte_${ca.corte || ''}.xlsx`);
+    estadoEl.textContent = `Listo: ${formateadorNumero.format(filas.length)} causas descargadas.`;
+  } catch (err) {
+    console.error(err);
+    estadoEl.textContent = `Error al descargar: ${err.message}`;
+  } finally {
+    botones.forEach(b => b.disabled = false);
+  }
+}
+document.querySelectorAll('[data-caducidad]').forEach(b => {
+  b.addEventListener('click', () => descargarCaducidadExcel(b.dataset.caducidad));
+});
 
 async function cargarVistaEstudio(estudioId) {
   estudioSeleccionadoActual = estudioId;
