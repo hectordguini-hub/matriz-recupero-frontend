@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GERENCIAR S.R.L. — Matriz de Recupero</title>
-<link rel="icon" href="logo-gerenciar.png">
+<link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -468,6 +468,16 @@
           <label class="campo-archivo">Archivo con Ficha <input type="file" id="backfill-cancelados-archivo" accept=".xlsx,.csv" required></label>
           <button type="submit" id="btn-backfill-cancelados">Cargar Cancelados</button>
           <p id="backfill-cancelados-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Último Paso Procesal (Archivos De Pasos)</summary>
+        <p class="ayuda">Subí uno o varios archivos de Pasos Procesales (por ejemplo, los últimos 6 meses a la vez). Guarda para cada causa la fecha y el tipo de su paso más reciente, que sirve para ver los días sin movimiento y el riesgo de caducidad. No modifica los conteos mensuales de pasos. Se puede subir en cualquier orden y repetir sin problema; cada mes nuevo que se cargue en la carga mensual lo actualiza solo.</p>
+        <form id="form-ultimo-paso" class="tarjeta-carga">
+          <label class="campo-archivo">Archivos de Pasos Procesales <input type="file" id="ultimo-paso-archivos" accept=".xlsx" multiple required></label>
+          <button type="submit" id="btn-ultimo-paso">Cargar Último Paso</button>
+          <p id="ultimo-paso-estado" class="mensaje-estado"></p>
         </form>
       </details>
 
