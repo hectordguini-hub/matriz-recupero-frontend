@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GERENCIAR S.R.L. — Matriz de Recupero</title>
-<link rel="icon" href="logo-gerenciar.png">
+<link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -238,6 +239,12 @@
           <summary id="titulo-grafico-caducidad-estudio">Riesgo De Caducidad — Causas En Gestión Según Su Último Paso Procesal</summary>
           <p class="ayuda" id="nota-caducidad-estudio"></p>
           <canvas id="grafico-caducidad-estudio"></canvas>
+          <div class="fila-botones-caducidad" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.8rem;align-items:center">
+            <button type="button" class="btn-secundario" data-caducidad="al_dia">Descargar al día (Excel)</button>
+            <button type="button" class="btn-secundario" data-caducidad="por_vencer">Descargar por vencer (Excel)</button>
+            <button type="button" class="btn-secundario" data-caducidad="sin_movimiento">Descargar sin paso en 6 meses (Excel)</button>
+            <span id="estado-descarga-caducidad" class="etiqueta-actualizado"></span>
+          </div>
         </details>
       </div>
 
