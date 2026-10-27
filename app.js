@@ -484,6 +484,7 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
 document.getElementById('selector-compania-estudio').addEventListener('change', (e) => {
   if (estudioSeleccionadoActual) {
     cargarKpisEstudio(estudioSeleccionadoActual, e.target.value);
+    cargarCaducidadEstudio(estudioSeleccionadoActual, e.target.value);
     cargarGraficosEstudio(estudioSeleccionadoActual, e.target.value);
     cargarPasosEstudio(estudioSeleccionadoActual, e.target.value);
   }
@@ -525,11 +526,60 @@ async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
   }
 }
 
+// Riesgo de caducidad de un estudio: barras con las causas en gestión según el
+// tiempo desde su último paso procesal (plazo de caducidad: 6 meses). Al pasar
+// el mouse por una barra se ve la cantidad, el % y el total del estudio.
+async function cargarCaducidadEstudio(estudioId, companiaSeleccionada) {
+  const nota = document.getElementById('nota-caducidad-estudio');
+  let consulta = supabaseClient.from('caducidad_estudio_compania')
+    .select('compania, al_dia, por_vencer, sin_movimiento_6m, total, fecha_corte')
+    .eq('estudio_id', estudioId);
+  if (companiaSeleccionada !== 'GENERAL') consulta = consulta.eq('compania', companiaSeleccionada);
+  const { data, error } = await consulta;
+  if (error) { nota.textContent = 'No se pudo cargar el riesgo de caducidad.'; return; }
+  const filas = data || [];
+  const suma = (campo) => filas.reduce((acc, f) => acc + Number(f[campo] || 0), 0);
+  const valores = [suma('al_dia'), suma('por_vencer'), suma('sin_movimiento_6m')];
+  const total = suma('total');
+  const corte = filas.map(f => f.fecha_corte).filter(Boolean).sort().pop();
+  const corteTxt = corte ? corte.split('-').reverse().join('/') : '—';
+  const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
+  nota.textContent = `${nombreCia ? nombreCia + ' · ' : ''}Plazo de caducidad: 6 meses. Corte de pasos procesales: ${corteTxt}. Pasá el mouse por cada barra para ver el total.`;
+
+  destruirSiExiste('grafico-caducidad-estudio');
+  const ctx = document.getElementById('grafico-caducidad-estudio');
+  graficos['grafico-caducidad-estudio'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Al día (hasta 4 meses)', 'Por vencer (4 a 6 meses)', 'Sin paso en los últimos 6 meses'],
+      datasets: [{ label: 'Causas en gestión', data: valores, backgroundColor: ['#3d8b5a', '#b07a0c', '#b23a28'] }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const v = Number(c.parsed.y || 0);
+              const pct = total ? (Math.round(v / total * 1000) / 10).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0,0';
+              return `${formateadorNumero.format(v)} causas (${pct}% del total)`;
+            },
+            afterLabel: () => `Total en gestión: ${formateadorNumero.format(total)}`,
+          },
+        },
+      },
+      scales: { y: { beginAtZero: true, ticks: { callback: (v) => formateadorNumero.format(v) } } },
+    },
+  });
+}
+
 async function cargarVistaEstudio(estudioId) {
   estudioSeleccionadoActual = estudioId;
   const companiaElegida = document.getElementById('selector-compania-estudio').value;
   cargarKpisEstudio(estudioId, companiaElegida);
   cargarGraficosEstudio(estudioId, companiaElegida);
+  cargarCaducidadEstudio(estudioId, companiaElegida);
 
   // ---- Detalle Empresa: comparación fija CFN/Megatone/Confina para este estudio ----
   const { data: baseEmpresa } = await supabaseClient
