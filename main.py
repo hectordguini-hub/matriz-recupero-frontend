@@ -319,8 +319,8 @@ async def backfill_cancelados(
 
 def _actualizar_ultimo_paso(cur, df):
     """Actualiza cartera_causas.fecha_ultimo_paso / ultimo_paso con el paso más
-    reciente de cada ficha. Solo pisa si la fecha del archivo es igual o más
-    nueva que la guardada (se pueden cargar los meses en cualquier orden).
+    reciente de cada ficha. Solo escribe si la fecha del archivo es más nueva
+    que la guardada (o no había ninguna), para no reescribir filas sin cambios (se pueden cargar los meses en cualquier orden).
     Devuelve cuántas fichas se actualizaron."""
     if df is None or df.empty:
         return 0
@@ -335,7 +335,7 @@ def _actualizar_ultimo_paso(cur, df):
                set fecha_ultimo_paso = v.f, ultimo_paso = v.p
               from (values %s) as v(ficha, f, p)
              where c.ficha = v.ficha
-               and (c.fecha_ultimo_paso is null or v.f >= c.fecha_ultimo_paso)
+               and (c.fecha_ultimo_paso is null or v.f > c.fecha_ultimo_paso)
             """,
             lote,
             template="(%s, %s::date, %s)",
@@ -374,23 +374,30 @@ async def cargar_ultimo_paso(
 
 
 def _procesar_ultimo_paso(usuario, rutas):
-    detalle = []
     try:
         try:
+            # Se leen todos los archivos y se combinan ANTES de escribir, así cada
+            # ficha se actualiza una sola vez (con su paso más reciente de todos).
+            partes, detalle = [], []
+            for nombre, ruta in rutas:
+                df = li.leer_ultimo_paso_archivo(ruta)
+                detalle.append(f"{nombre}: {len(df)} fichas")
+                print(f"[ULTIMO-PASO] {nombre}: {len(df)} fichas en el archivo", flush=True)
+                partes.append(df)
+            df_todo = pd.concat(partes, ignore_index=True)
+            df_todo['_orden'] = range(len(df_todo))
+            df_todo = (df_todo.sort_values(['ficha', 'fecha_ultimo_paso', '_orden'])
+                       .groupby('ficha', as_index=False).tail(1)[['ficha', 'fecha_ultimo_paso', 'ultimo_paso']])
             conn = obtener_conexion()
             try:
-                for nombre, ruta in rutas:
-                    df = li.leer_ultimo_paso_archivo(ruta)
-                    with conn, conn.cursor() as cur:
-                        n = _actualizar_ultimo_paso(cur, df)
-                    detalle.append(f"{nombre}: {len(df)} fichas, {n} actualizadas")
-                    print(f"[ULTIMO-PASO] {nombre}: {len(df)} fichas en el archivo, {n} actualizadas", flush=True)
+                with conn, conn.cursor() as cur:
+                    n = _actualizar_ultimo_paso(cur, df_todo)
             finally:
                 conn.close()
         except Exception as e:
-            _log_carga(usuario, "error", f"Error cargando el último paso: {e}" + (f" (ya cargados: {'; '.join(detalle)})" if detalle else ""))
+            _log_carga(usuario, "error", f"Error cargando el último paso: {e}")
             return
-        _log_carga(usuario, "ok", "Último paso procesal cargado — " + "; ".join(detalle))
+        _log_carga(usuario, "ok", f"Último paso procesal cargado: {len(df_todo)} fichas distintas en {len(rutas)} archivo(s), {n} actualizadas — " + "; ".join(detalle))
     finally:
         for _, ruta in rutas:
             try:
