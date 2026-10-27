@@ -7,7 +7,8 @@ function subPct(n, d, ref) {
 }
 function tarjetaKpiHtml(k) {
   const sub = k.sub ? `<span class="sub-pct" style="display:block;font-size:0.7em;opacity:0.7;margin-top:2px">${k.sub}</span>` : '';
-  return `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span>${sub}</div>`;
+  const estiloValor = k.moneda ? ' style="font-size:clamp(0.6rem,1.3vw,0.74rem);white-space:nowrap;overflow-wrap:normal"' : '';
+  return `<div class="tarjeta-kpi"><span class="valor"${estiloValor}>${k.valor}</span><span class="etiqueta">${k.etiqueta}</span>${sub}</div>`;
 }
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
@@ -283,7 +284,7 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
   }
   const kpis = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')) },
+    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')), moneda: true },
     { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
@@ -464,7 +465,7 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
     fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
   }
   document.getElementById('kpis-estudio').innerHTML = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')) },
+    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')), moneda: true },
     { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
@@ -603,7 +604,7 @@ async function cargarVistaEmpresa(compania) {
   const fichasExt = porMesFichasExt[ultimoMes] || 0;
 
   document.getElementById('kpis-empresa').innerHTML = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')) },
+    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')), moneda: true },
     { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
