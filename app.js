@@ -1,3 +1,14 @@
+
+// Porcentaje chiquito debajo de un KPI: "n de d" -> "83,5% de <referencia>".
+function subPct(n, d, ref) {
+  n = Number(n) || 0; d = Number(d) || 0;
+  if (!d) return '';
+  return (Math.round(n / d * 1000) / 10).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '% ' + ref;
+}
+function tarjetaKpiHtml(k) {
+  const sub = k.sub ? `<span class="sub-pct" style="display:block;font-size:0.7em;opacity:0.7;margin-top:2px">${k.sub}</span>` : '';
+  return `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span>${sub}</div>`;
+}
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
 // Supabase tiene un límite máximo de filas por consulta configurado a nivel
@@ -277,15 +288,14 @@ async function cargarKpisGenerales(companiaSeleccionada) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'Causas en gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')) },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')), sub: subPct(valorFn('INICIADAS'), valorFn('EN GESTIÓN'), 'de en gestión') },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')), sub: subPct(valorFn('INICIADAS TOTALES'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')), sub: subPct(valorFn('CANCELADAS'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
   ];
-  document.getElementById('kpis-generales').innerHTML = kpis.map(k => `
-    <div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
+  document.getElementById('kpis-generales').innerHTML = kpis.map(tarjetaKpiHtml).join('');
 }
 
 let granularidadTodasNacional = 'diario';
@@ -458,14 +468,14 @@ async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')) },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')) },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')) },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')) },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')), sub: subPct(valorFn('INICIADAS'), valorFn('EN GESTIÓN'), 'de en gestión') },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')), sub: subPct(valorFn('INICIADAS TOTALES'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')), sub: subPct(valorFn('CANCELADAS'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorFn('CONTRAPARTE')) },
-  ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
+  ].map(tarjetaKpiHtml).join('');
 }
 
 document.getElementById('selector-compania-estudio').addEventListener('change', (e) => {
@@ -596,14 +606,14 @@ async function cargarVistaEmpresa(compania) {
     { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
     { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
     { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorBase('INICIADAS')) },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorBase('INICIADAS TOTALES')) },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorBase('CANCELADAS')) },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorBase('CANCELADAS') - valorBase('CANCELADAS SIN INICIAR')) },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorBase('CANCELADAS SIN INICIAR')) },
+    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorBase('INICIADAS')), sub: subPct(valorBase('INICIADAS'), valorBase('EN GESTIÓN'), 'de en gestión') },
+    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorBase('INICIADAS TOTALES')), sub: subPct(valorBase('INICIADAS TOTALES'), (valorBase('EN GESTIÓN') + valorBase('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorBase('CANCELADAS')), sub: subPct(valorBase('CANCELADAS'), (valorBase('EN GESTIÓN') + valorBase('CANCELADAS')), 'del total de causas') },
+    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorBase('CANCELADAS') - valorBase('CANCELADAS SIN INICIAR')), sub: subPct(valorBase('CANCELADAS') - valorBase('CANCELADAS SIN INICIAR'), valorBase('CANCELADAS'), 'de las canceladas') },
+    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorBase('CANCELADAS SIN INICIAR')), sub: subPct(valorBase('CANCELADAS SIN INICIAR'), valorBase('CANCELADAS'), 'de las canceladas') },
     { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
     { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
-  ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
+  ].map(tarjetaKpiHtml).join('');
 
   dibujarSeguimientoJudExtra('grafico-empresa-recupero', meses,
     meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExt[m] || 0),
