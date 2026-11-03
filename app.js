@@ -1,62 +1,33 @@
+const supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
-// Porcentaje chiquito debajo de un KPI: "n de d" -> "83,5% de <referencia>".
-function subPct(n, d, ref) {
-  n = Number(n) || 0; d = Number(d) || 0;
-  if (!d) return '';
-  return (Math.round(n / d * 1000) / 10).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '% ' + ref;
-}
-function tarjetaKpiHtml(k) {
-  const sub = k.sub ? `<span class="sub-pct" style="display:block;font-size:0.7em;opacity:0.7;margin-top:2px">${k.sub}</span>` : '';
-  const estiloValor = k.moneda ? ' style="font-size:clamp(0.6rem,1.3vw,0.74rem);white-space:nowrap;overflow-wrap:normal"' : '';
-  return `<div class="tarjeta-kpi"><span class="valor"${estiloValor}>${k.valor}</span><span class="etiqueta">${k.etiqueta}</span>${sub}</div>`;
-}
-const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-
-// Supabase tiene un límite máximo de filas por consulta configurado a nivel
-// de proyecto (normalmente 1000) que .limit() del lado del cliente NO puede
-// pisar. Para traer TODO sin importar cuántas filas haya, pedimos "de a
-// páginas" con .range() hasta que la página vuelva incompleta.
-async function consultarPaginado(construirConsulta, tamanioPagina = 1000) {
-  let todas = [];
-  let desde = 0;
-  while (true) {
-    const { data, error } = await construirConsulta().range(desde, desde + tamanioPagina - 1);
-    if (error) { console.error(error); break; }
-    if (!data || data.length === 0) break;
-    todas = todas.concat(data);
-    if (data.length < tamanioPagina) break;
-    desde += tamanioPagina;
-  }
-  return todas;
-}
+const formateadorNumero = new Intl.NumberFormat('es-AR');
+const formateadorPorcentaje = new Intl.NumberFormat('es-AR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 const COLOR_TINTA = '#25404a';
 const COLOR_BRONCE = '#ca0130';
 const COLOR_VERDE = '#3f6b4f';
 const COLOR_ROJO = '#a23b2d';
-const COLOR_LINEA = '#dedad0';
-const COLOR_JUDICIAL = '#25404a';       // navy — bien distinto del extrajudicial
-const COLOR_EXTRAJUDICIAL = '#c9820a';  // ámbar — bien distinto del judicial y del verde
-const COLOR_CFN = '#ca0130';       // bronce/rojo
-const COLOR_EM = '#25404a';        // navy
-const COLOR_CONFINA = '#3f6b4f';   // verde
+const graficos = {};
 
-const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
-const formateadorNumero = new Intl.NumberFormat('es-AR');
-
-let graficos = {}; // referencias a instancias de Chart.js, para poder destruir/redibujar
-
-// ============================================================
-// AUTENTICACIÓN
-// ============================================================
-async function iniciarApp() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) {
-    mostrarApp(session);
-  } else {
-    document.getElementById('pantalla-login').classList.remove('oculto');
-  }
+function destruirSiExiste(id) {
+  if (graficos[id]) { graficos[id].destroy(); delete graficos[id]; }
 }
+
+// ============================================================
+// LOGIN / SESIÓN
+// ============================================================
+// Si la sesion vencio (o se cerro en otra pestaña), getSession() devuelve
+// null y antes se mostraba un error tecnico. Ahora se explica que hacer.
+function tokenSesion(session) {
+  if (!session || !session.access_token) {
+    throw new Error('Tu sesión venció. Hacé clic en "Salir", volvé a ingresar con tu usuario y repetí la carga.');
+  }
+  return session.access_token;
+}
+
+supabaseClient.auth.getSession().then(({ data: { session } }) => {
+  if (session) mostrarApp(session);
+});
 
 document.getElementById('form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -64,89 +35,206 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   const password = document.getElementById('login-password').value;
   const errorEl = document.getElementById('login-error');
   errorEl.textContent = '';
-
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    errorEl.textContent = 'Email o contraseña incorrectos.';
-    return;
-  }
+  if (error) { errorEl.textContent = 'Email o contraseña incorrectos.'; return; }
   mostrarApp(data.session);
 });
 
 document.getElementById('btn-logout').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
-  window.location.reload();
+  location.reload();
 });
 
-function mostrarApp(session) {
+async function mostrarApp(session) {
   document.getElementById('pantalla-login').classList.add('oculto');
-
-  // Si el usuario fue creado con la marca "debe cambiar la contraseña" (se
-  // pone al crearlo en Supabase, en el campo de metadata del usuario), no lo
-  // dejamos entrar al dashboard hasta que la cambie.
-  if (session.user.user_metadata && session.user.user_metadata.must_change_password) {
-    document.getElementById('pantalla-cambiar-password').classList.remove('oculto');
-    return;
-  }
-
   document.getElementById('app').classList.remove('oculto');
   document.getElementById('usuario-email').textContent = session.user.email;
-  llenarSelectorDeDias('rd-nacional-dia');
-  llenarSelectorDeDias('rd-detalle-dia');
-  llenarSelectorDeDias('selector-dia-nacional');
-  llenarSelectorDeDias('selector-dia-todas');
-  llenarSelectorDeDias('selector-dia-rd-acumulado');
-  preseleccionarDiaHoy();
+  await cargarSelectorUnidadNegocio();
+  await Promise.all([
+    llenarSelectorUnidadSimple('pv-unidad-negocio'),
+    llenarSelectorUnidadSimple('conv-unidad-negocio'),
+    llenarSelectorUnidadSimple('nc-unidad-negocio'),
+    llenarSelectorUnidadSimple('sg-unidad-negocio'),
+  ]);
+  await aplicarRestriccionUnidad(session.user.email);
   cargarVistaResumen();
-  cargarSelectorEstudios();
-  cargarVistaEmpresa('CFN');
-  cargarRdNacional('diario', diaRdNacional);
-  cargarRdDetalle();
-  cargarRdAcumuladoMes();
   cargarLogCargas();
 }
 
-// Por defecto, los gráficos con selector de día arrancan mostrando el
-// comparativo "del 1 al día de hoy" (en vez de la línea de tiempo diaria
-// continua) — se preselecciona el día actual en cada selector.
-function preseleccionarDiaHoy() {
-  const diaHoy = String(new Date().getDate());
-  diaNacional = diaHoy;
-  diaTodas = diaHoy;
-  diaRdNacional = diaHoy;
-  ['selector-dia-nacional', 'selector-dia-todas', 'rd-nacional-dia', 'rd-detalle-dia'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = diaHoy;
+async function cargarSelectorUnidadNegocio() {
+  const { data } = await supabaseClient.rpc('unidades_negocio_disponibles');
+  const selects = [document.getElementById('selector-unidad-resumen'), document.getElementById('cartera-resumen-unidad')];
+  (data || []).forEach(f => {
+    selects.forEach((select, i) => {
+      const opt = document.createElement('option');
+      opt.value = f.unidad_negocio;
+      opt.textContent = f.unidad_negocio;
+      select.appendChild(opt);
+    });
   });
 }
 
-document.getElementById('form-cambiar-password').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errorEl = document.getElementById('cambiar-password-error');
-  errorEl.textContent = '';
-  const nueva = document.getElementById('nueva-password').value;
-  const confirmar = document.getElementById('nueva-password-confirmar').value;
+// ============================================================
+// RESTRICCION DE UNIDAD PARA REFERENTES
+// ============================================================
+async function aplicarRestriccionUnidad(email) {
+  const { data } = await supabaseClient
+    .from('referentes_unidad')
+    .select('unidad_negocio')
+    .eq('email', email);
 
-  if (nueva !== confirmar) {
-    errorEl.textContent = 'Las dos contraseñas no coinciden.';
-    return;
-  }
+  // Si el email no esta en la tabla (por ejemplo la cuenta de
+  // administracion), no se restringe nada -> sigue viendo todo.
+  if (!data || data.length === 0) return;
 
-  const { data, error } = await supabaseClient.auth.updateUser({
-    password: nueva,
-    data: { must_change_password: false },
+  // Un referente (cualquiera con restriccion) no puede crear usuarios
+  // nuevos -> se le oculta el formulario, no solo se le bloquea en el
+  // backend.
+  const formAltaUsuario = document.getElementById('form-alta-usuario');
+  if (formAltaUsuario) formAltaUsuario.classList.add('oculto');
+
+  const unidadesPermitidas = data.map(f => f.unidad_negocio);
+  const todosLosSelectores = [
+    'selector-unidad-resumen', 'cartera-resumen-unidad', 'comp-unidad-negocio', 'rd-unidad-negocio',
+    'cartera-unidad-negocio', 'recupero-unidad-negocio', 'baja-unidad-negocio',
+    'pv-unidad-negocio', 'conv-unidad-negocio', 'nc-unidad-negocio', 'sg-unidad-negocio', 'masivos-unidad-negocio',
+  ];
+
+  todosLosSelectores.forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    Array.from(select.options).forEach(opt => {
+      // Se conserva la opcion vacia/placeholder ("", o el "Todas" en los
+      // selectores que la tienen) solo si el select NO es de los que
+      // muestran "Todas" -> en los que si la tienen, "Todas" se saca
+      // igual, porque un referente no deberia poder ver el conjunto.
+      if (opt.value === '') { select.removeChild(opt); return; }
+      if (opt.value === 'JUDICIAL_AUTO') { select.removeChild(opt); return; }
+      if (!unidadesPermitidas.includes(opt.value)) select.removeChild(opt);
+    });
+    if (select.options.length > 0) {
+      select.value = select.options[0].value;
+      select.dispatchEvent(new Event('change'));
+    }
+    if (select.options.length === 1) select.disabled = true;
   });
-  if (error) {
-    errorEl.textContent = 'No se pudo guardar la contraseña: ' + error.message;
+}
+
+// ============================================================
+// VISTA: CARTERA (composicion y resumen)
+// ============================================================
+document.getElementById('cartera-resumen-unidad').addEventListener('change', cargarVistaCarteraResumen);
+document.getElementById('cartera-resumen-incluir-pagos').addEventListener('change', cargarVistaCarteraResumen);
+
+async function cargarVistaCarteraResumen() {
+  const unidad = document.getElementById('cartera-resumen-unidad').value;
+  if (!unidad) return;
+  const incluirPagos = document.getElementById('cartera-resumen-incluir-pagos').checked;
+
+  const [totalesResp, porBoxResp, porRangoResp] = await Promise.all([
+    supabaseClient.rpc('cartera_totales', { p_unidad_negocio: unidad, p_incluir_pagos_vigentes: incluirPagos }),
+    supabaseClient.rpc('cartera_resumen_por_box', { p_unidad_negocio: unidad, p_incluir_pagos_vigentes: incluirPagos }),
+    supabaseClient.rpc('cartera_resumen_por_rango', { p_unidad_negocio: unidad, p_incluir_pagos_vigentes: incluirPagos }),
+  ]);
+
+  const totales = (totalesResp.data && totalesResp.data[0]) || {};
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+
+  document.getElementById('cartera-resumen-totales').innerHTML = [
+    { etiqueta: 'Créditos/Fichas totales', valor: formateadorNumero.format(totales.creditos || 0) },
+    { etiqueta: 'DNI totales (sin duplicar)', valor: formateadorNumero.format(totales.dni || 0) },
+    { etiqueta: 'Saldo total', valor: formateadorMoneda.format(totales.saldo || 0) },
+  ].map(k => `<div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
+
+  const filaHtml = f => `
+    <tr>
+      <td>${f.box || f.rango}</td>
+      <td class="numero">${formateadorNumero.format(f.creditos)}</td>
+      <td class="numero">${formateadorNumero.format(f.dni)}</td>
+      <td class="numero">${formateadorMoneda.format(f.saldo)}</td>
+      <td class="numero">${formateadorPorcentaje.format(f.pct_creditos)}</td>
+      <td class="numero">${formateadorPorcentaje.format(f.pct_dni)}</td>
+      <td class="numero">${formateadorPorcentaje.format(f.pct_saldo)}</td>
+    </tr>`;
+
+  const filaTotalHtml = filas => {
+    if (!filas.length) return '';
+    const sum = campo => filas.reduce((acc, f) => acc + Number(f[campo] || 0), 0);
+    return `
+      <tr class="fila-mes-actual">
+        <td><strong>Total</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(sum('creditos'))}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(sum('dni'))}</strong></td>
+        <td class="numero"><strong>${formateadorMoneda.format(sum('saldo'))}</strong></td>
+        <td class="numero"><strong>${formateadorPorcentaje.format(sum('pct_creditos'))}</strong></td>
+        <td class="numero"><strong>${formateadorPorcentaje.format(sum('pct_dni'))}</strong></td>
+        <td class="numero"><strong>${formateadorPorcentaje.format(sum('pct_saldo'))}</strong></td>
+      </tr>`;
+  };
+
+  const filasBox = porBoxResp.data || [];
+  const filasRango = porRangoResp.data || [];
+  document.querySelector('#tabla-cartera-por-box tbody').innerHTML = filasBox.map(filaHtml).join('') + filaTotalHtml(filasBox);
+  document.querySelector('#tabla-cartera-por-rango tbody').innerHTML = filasRango.map(filaHtml).join('') + filaTotalHtml(filasRango);
+}
+
+document.getElementById('btn-descargar-cartera').addEventListener('click', async () => {
+  const unidad = document.getElementById('cartera-resumen-unidad').value;
+  const estadoEl = document.getElementById('cartera-descarga-estado');
+  if (!unidad) {
+    estadoEl.textContent = 'Elegí una unidad de negocio primero.';
+    estadoEl.className = 'mensaje-estado error';
     return;
   }
+  const boton = document.getElementById('btn-descargar-cartera');
+  boton.disabled = true;
+  estadoEl.className = 'mensaje-estado';
 
-  document.getElementById('pantalla-cambiar-password').classList.add('oculto');
-  mostrarApp(data.user ? { user: data.user } : (await supabaseClient.auth.getSession()).data.session);
+  try {
+    // Se pagina de a 1000 filas (limite de Supabase por consulta) hasta
+    // traer toda la cartera de la unidad, que en algunas unidades supera
+    // las 50.000 fichas.
+    const filas = [];
+    const tamanoPagina = 1000;
+    let desde = 0;
+    while (true) {
+      estadoEl.textContent = `Descargando… ${filas.length} fichas traídas`;
+      const { data, error } = await supabaseClient
+        .from('cartera_asignada')
+        .select('compania, ficha, box, nro_documento, nombre_causa, deuda_total, fecha_inicio_estudio, provincia, rango, estado, telefono_1, telefono_2, telefono_3, email')
+        .eq('unidad_negocio', unidad)
+        .order('id', { ascending: true })
+        .range(desde, desde + tamanoPagina - 1);
+      if (error) throw new Error(error.message);
+      filas.push(...data);
+      if (data.length < tamanoPagina) break;
+      desde += tamanoPagina;
+    }
+
+    if (filas.length === 0) {
+      estadoEl.textContent = 'No hay fichas cargadas todavía para esta unidad.';
+      estadoEl.className = 'mensaje-estado error';
+      return;
+    }
+
+    const hoja = XLSX.utils.json_to_sheet(filas);
+    const libro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, hoja, unidad.slice(0, 31));
+    const nombreArchivo = `Cartera_${unidad.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(libro, nombreArchivo);
+
+    estadoEl.textContent = `Listo — ${filas.length} fichas descargadas.`;
+    estadoEl.className = 'mensaje-estado ok';
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
 });
 
 // ============================================================
-// NAVEGACIÓN ENTRE PESTAÑAS
+// NAVEGACIÓN
 // ============================================================
 document.getElementById('nav-pestanas').addEventListener('click', (e) => {
   const boton = e.target.closest('.pestana');
@@ -163,1042 +251,410 @@ document.getElementById('btn-toggle-menu').addEventListener('click', () => {
 });
 
 // ============================================================
-// VISTA: RESUMEN GENERAL
+// VISTA: RESUMEN
 // ============================================================
+function llenarSelectorMeses() {
+  const select = document.getElementById('selector-rango-resumen');
+  const hoy = new Date();
+  const nombresMes = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const valor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const opt = document.createElement('option');
+    opt.value = valor;
+    opt.textContent = i === 0 ? `${nombresMes[d.getMonth()]} ${d.getFullYear()} (actual)` : `${nombresMes[d.getMonth()]} ${d.getFullYear()}`;
+    if (i === 0) opt.selected = true;
+    select.appendChild(opt);
+  }
+}
+llenarSelectorMeses();
+
+function fechasDelMesSeleccionado() {
+  const [anio, mes] = document.getElementById('selector-rango-resumen').value.split('-').map(Number);
+  const hoy = new Date();
+  const esMesActual = (anio === hoy.getFullYear() && mes === hoy.getMonth() + 1);
+  const desde = new Date(anio, mes - 1, 1);
+  // Si es el mes en curso, corta hoy; si es un mes anterior, va hasta el ultimo dia de ese mes.
+  const hasta = esMesActual ? hoy : new Date(anio, mes, 0);
+  const aISO = f => f.toISOString().slice(0, 10);
+  return { fechaDesde: aISO(desde), fechaHasta: aISO(hasta) };
+}
+
+// Dias habiles: Lunes a Sabado cuentan como dia entero; Domingo no.
+function calcularDiasHabiles() {
+  const [anio, mes] = document.getElementById('selector-rango-resumen').value.split('-').map(Number);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const ultimoDia = new Date(anio, mes, 0).getDate();
+  let totalMes = 0, restantes = 0;
+  for (let d = 1; d <= ultimoDia; d++) {
+    const fecha = new Date(anio, mes - 1, d);
+    if (fecha.getDay() === 0) continue; // domingo no es habil
+    totalMes++;
+    if (fecha >= hoy) restantes++;
+  }
+  return { totalMes, restantes };
+}
+
+document.getElementById('selector-rango-resumen').addEventListener('change', cargarVistaResumen);
+document.getElementById('selector-unidad-resumen').addEventListener('change', () => {
+  actualizarVisibilidadEmpresa();
+  cargarVistaResumen();
+});
+document.getElementById('selector-empresa-resumen').addEventListener('change', cargarVistaResumen);
+
+// El selector de empresa solo aplica a GERENCIAR RECUPERA, que maneja
+// ambas empresas juntas. En cualquier otra unidad se oculta y se ignora.
+function esUnidadMultiempresa() {
+  return (document.getElementById('selector-unidad-resumen').value || '').toUpperCase() === 'GERENCIAR RECUPERA';
+}
+function actualizarVisibilidadEmpresa() {
+  const fila = document.getElementById('fila-empresa-resumen');
+  const sel = document.getElementById('selector-empresa-resumen');
+  if (esUnidadMultiempresa()) fila.classList.remove('oculto');
+  else { fila.classList.add('oculto'); sel.value = ''; }
+}
+function empresaSeleccionada() {
+  return esUnidadMultiempresa() ? (document.getElementById('selector-empresa-resumen').value || null) : null;
+}
+
 async function cargarVistaResumen() {
-  const { data: base, error: errBase } = await supabaseClient
-    .from('base_gral')
-    .select('parametro, valor, actualizado_en, estudios(nombre)');
-  if (errBase) { console.error(errBase); return; }
+  const { fechaDesde, fechaHasta } = fechasDelMesSeleccionado();
+  const unidadNegocio = document.getElementById('selector-unidad-resumen').value || null;
+  actualizarVisibilidadEmpresa();
+  const empresa = empresaSeleccionada();
 
-  const nacionalDetalle = await consultarPaginado(() => supabaseClient
-    .from('matriz_mensual')
-    .select('mes, parametro, valor')
-    .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA', 'CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.'])
-    .order('mes', { ascending: true })
-  );
-  // ---- KPIs (según el selector General/CFN/Megatone/Confina) ----
-  cargarKpisGenerales('GENERAL');
-  cargarGraficoRecuperoPorCompania('GENERAL');
-  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional, diaTodas);
+  const [kpisResp, porAgenteDiaResp, efectividadResp, porCanalResp, porEfectoResp, extendidoResp, masividadResp, carteraDniResp, objetivoFijoResp] = await Promise.all([
+    supabaseClient.rpc('gestiones_kpis', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_por_agente_dia', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_efectividad_por_agente', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_por_canal', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_por_efecto', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_extendido_por_agente', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    supabaseClient.rpc('gestiones_masividad', { fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_unidad_negocio: unidadNegocio, p_empresa: empresa }),
+    unidadNegocio
+      ? supabaseClient.rpc('cartera_embudo_efectividad', { p_unidad_negocio: unidadNegocio, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_empresa: empresaSeleccionada() })
+      : Promise.resolve({ data: null }),
+    // Objetivo "congelado": la deuda total de la cartera tal como quedó
+    // registrada la última vez que se cargó una cartera completa para esta
+    // unidad — no se mueve con las bajas posteriores, porque el cliente
+    // mide el objetivo sobre lo que nos asignó originalmente.
+    unidadNegocio
+      ? supabaseClient.rpc('cartera_objetivo_congelado', { p_unidad_negocio: unidadNegocio })
+      : Promise.resolve({ data: null }),
+  ]);
 
-  const ultimaActualizacion = base.reduce((max, f) => f.actualizado_en > max ? f.actualizado_en : max, '');
-  document.getElementById('resumen-actualizado').textContent = ultimaActualizacion
-    ? `Actualizado: ${new Date(ultimaActualizacion).toLocaleString('es-AR')}`
-    : '';
+  const extendidoPorUsuario = {};
+  (extendidoResp.data || []).forEach(f => { extendidoPorUsuario[`${f.usuario}|${f.empresa || ''}`] = f; });
 
-  // ---- Gráfico: recupero mensual nacional, judicial vs extrajudicial + fichas ----
-  const sumarPor = (parametro) => {
-    const acumulado = {};
-    nacionalDetalle.filter(f => f.parametro === parametro).forEach(f => { acumulado[f.mes] = (acumulado[f.mes] || 0) + Number(f.valor); });
-    return acumulado;
-  };
-  const porMesJud = sumarPor('RECUPERO JUDICIAL');
-  const porMesExtra = sumarPor('RECUPERO EXTRA');
-  const porMesFichasJud = sumarPor('CAUSAS CON PAGOS JUD.');
-  const porMesFichasExtra = sumarPor('CAUSAS CON PAGOS EXT.');
-  const meses = [...new Set(nacionalDetalle.map(f => f.mes))].sort();
-  dibujarSeguimientoJudExtra('grafico-recupero-nacional', meses,
-    meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExtra[m] || 0),
-    meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExtra[m] || 0));
+  const kpis = (kpisResp.data && kpisResp.data[0]) || {};
+  const porAgenteDia = porAgenteDiaResp.data || [];
+  const efectividad = efectividadResp.data || [];
+  const porCanal = porCanalResp.data || [];
+  const porEfecto = porEfectoResp.data || [];
+  const dniCarteraAsignada = carteraDniResp.data && carteraDniResp.data[0] ? carteraDniResp.data[0].dni_cartera : null;
+  const embudoParaKpi = (carteraDniResp.data && carteraDniResp.data[0]) || null;
 
-  cargarTodosLosSeguimientos(false);
-  cargarTodosLosPasosDetalle(false);
-
-  // ---- Gráfico: torta por estudio o por empresa (últ. mes cerrado) ----
-  cargarTortaEstudios();
-
-  // ---- Gráfico: torta judicial vs extrajudicial (último mes, todos los estudios) ----
-  let totalJud = 0, totalExtra = 0;
-  if (meses.length > 0) {
-    const { data: judExtra } = await supabaseClient
-      .from('matriz_mensual')
-      .select('parametro, valor, mes')
-      .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
-      .eq('mes', meses[meses.length - 1]);
-    totalJud = (judExtra || []).filter(f => f.parametro === 'RECUPERO JUDICIAL').reduce((a, f) => a + Number(f.valor), 0);
-    totalExtra = (judExtra || []).filter(f => f.parametro === 'RECUPERO EXTRA').reduce((a, f) => a + Number(f.valor), 0);
-  }
-  dibujarTorta('grafico-torta-jud-extra', ['Judicial', 'Extrajudicial'], [totalJud, totalExtra], [COLOR_TINTA, COLOR_BRONCE]);
-
-  // ---- Tabla detalle ----
-  const porEstudio = {};
-  base.forEach(f => {
-    const nombre = f.estudios.nombre;
-    porEstudio[nombre] = porEstudio[nombre] || {};
-    porEstudio[nombre][f.parametro] = Number(f.valor);
-  });
-
-  // Recupero promedio de los últimos 6 meses cerrados (judicial + extrajudicial), por estudio.
-  const ultimosSeisMeses = meses.slice(-6);
-  const cantidadMesesSemestre = ultimosSeisMeses.length || 1;
-  const totalSemestralPorEstudio = {};
-  if (ultimosSeisMeses.length) {
-    const { data: semestral } = await supabaseClient
-      .from('matriz_mensual')
-      .select('valor, estudios(nombre)')
-      .in('parametro', ['RECUPERO JUDICIAL', 'RECUPERO EXTRA'])
-      .in('mes', ultimosSeisMeses);
-    (semestral || []).forEach(f => {
-      const nombre = f.estudios.nombre;
-      totalSemestralPorEstudio[nombre] = (totalSemestralPorEstudio[nombre] || 0) + Number(f.valor);
-    });
-  }
-
-  const filasTabla = Object.entries(porEstudio).sort((a, b) => (b[1]['RECUPERO ULT.MES CERRADO'] || 0) - (a[1]['RECUPERO ULT.MES CERRADO'] || 0));
-  document.querySelector('#tabla-base-gral tbody').innerHTML = filasTabla.map(([nombre, valores]) => `
-    <tr>
-      <td>${nombre}</td>
-      <td class="numero">${formateadorMoneda.format(valores['RECUPERO ULT.MES CERRADO'] || 0)}</td>
-      <td class="numero">${formateadorMoneda.format((totalSemestralPorEstudio[nombre] || 0) / cantidadMesesSemestre)}</td>
-      <td class="numero">${formateadorNumero.format(valores['EN GESTIÓN'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(valores['INICIADAS'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(valores['CON EMBARGO HABERES'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(valores['CONTRAPARTE'] || 0)}</td>
-    </tr>`).join('');
-}
-
-async function cargarKpisGenerales(companiaSeleccionada) {
-  let valorFn, fichasJud = 0, fichasExt = 0;
-  if (companiaSeleccionada === 'GENERAL') {
-    const { data: base } = await supabaseClient.from('base_gral').select('parametro, valor');
-    valorFn = (param) => (base || []).filter(f => f.parametro === param).reduce((acc, f) => acc + Number(f.valor), 0);
-    const nacionalFichas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor')
-      .in('parametro', ['CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.'])
-      .order('mes', { ascending: true }));
-    const meses = [...new Set(nacionalFichas.map(f => f.mes))].sort();
-    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasJud = nacionalFichas.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS JUD.').reduce((a, f) => a + Number(f.valor), 0);
-    fichasExt = nacionalFichas.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS EXT.').reduce((a, f) => a + Number(f.valor), 0);
-  } else {
-    const { data: base } = await supabaseClient.from('base_gral_por_compania').select('parametro, valor').eq('compania', companiaSeleccionada);
-    valorFn = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
-    const filasMes = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor')
-      .in('parametro', [`CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
-      .order('mes', { ascending: true }));
-    const meses = [...new Set(filasMes.map(f => f.mes))].sort();
-    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} JUD.`).reduce((a, f) => a + Number(f.valor), 0);
-    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
-  }
-  const kpis = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')), moneda: true },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
-    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
-    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
-    { etiqueta: 'Total cartera', valor: formateadorNumero.format(valorFn('EN GESTIÓN') + valorFn('CANCELADAS')) },
-    { etiqueta: 'Causas en gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')), sub: subPct(valorFn('INICIADAS'), valorFn('EN GESTIÓN'), 'de en gestión') },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')), sub: subPct(valorFn('INICIADAS TOTALES'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')), sub: subPct(valorFn('CANCELADAS'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
+  // ---- KPIs ----
+  // % Efectividad = contacto directo (por ultima gestion de cada DNI)
+  // sobre la cantidad de DNI trabajados (tambien deduplicado) — no sobre
+  // el total de filas de gestion, que puede tener varios intentos sobre
+  // el mismo DNI.
+  const pctEfectividad = kpis.dni_trabajados ? (Number(kpis.contacto_directo || 0) / Number(kpis.dni_trabajados)) : 0;
+  const masividad = (masividadResp.data && masividadResp.data[0]) || {};
+  const formateadorMonedaMasividad = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  const diasHabiles = calcularDiasHabiles();
+  const kpisHtml = [
+    { etiqueta: 'Total gestiones', valor: formateadorNumero.format(kpis.total_gestiones || 0) },
+    { etiqueta: 'DNI trabajados', valor: formateadorNumero.format(kpis.dni_trabajados || 0) },
+    { etiqueta: 'Cartera Asignada (DNI)', valor: dniCarteraAsignada !== null ? formateadorNumero.format(dniCarteraAsignada) : '—' },
+    { etiqueta: 'Días hábiles restantes', valor: `${diasHabiles.restantes} / ${diasHabiles.totalMes}` },
+    { etiqueta: 'Agentes activos', valor: formateadorNumero.format(kpis.agentes_activos || 0) },
+    { etiqueta: 'Contacto directo', valor: formateadorNumero.format(kpis.contacto_directo || 0) },
+    { etiqueta: '% Efectividad (contacto directo)', valor: formateadorPorcentaje.format(pctEfectividad) },
+    { etiqueta: 'Pagos por mensajes masivos', valor: `${formateadorNumero.format(masividad.dni_con_pago || 0)} (${formateadorMonedaMasividad.format(masividad.monto_recaudado || 0)})` },
   ];
-  document.getElementById('kpis-generales').innerHTML = kpis.map(tarjetaKpiHtml).join('');
-}
-
-let granularidadTodasNacional = 'diario';
-let diaNacional = '';
-let diaTodas = '';
-
-// Gráfico 1: Recupero mensual, con una línea + una barra de fichas por cada
-// compañía (CFN/Megatone/Confina) — o, si se elige una compañía puntual en
-// el desplegable, el mismo detalle judicial/extrajudicial que ya usa "Por
-// Empresa" (mismos datos, mismo gráfico, reutilizado acá).
-async function cargarGraficoRecuperoPorCompania(companiaSeleccionada) {
-  const tituloEl = document.getElementById('titulo-grafico-recupero-companias');
-  if (companiaSeleccionada === 'GENERAL') {
-    tituloEl.textContent = 'Recupero Mensual — Por Compañía';
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor')
-      .in('parametro', ['RECUPERO CFN', 'RECUPERO EM', 'RECUPERO CONFINA', 'CCP CFN', 'CCP EM', 'CCP CONFINA'])
-      .order('mes', { ascending: true }));
-    const sumarPor = (parametro) => {
-      const acc = {};
-      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
-      return acc;
-    };
-    const meses = [...new Set(filas.map(f => f.mes))].sort();
-    const porCfn = sumarPor('RECUPERO CFN'), porEm = sumarPor('RECUPERO EM'), porConfina = sumarPor('RECUPERO CONFINA');
-    const fichasCfn = sumarPor('CCP CFN'), fichasEm = sumarPor('CCP EM'), fichasConfina = sumarPor('CCP CONFINA');
-    dibujarMultiSeguimiento('grafico-recupero-nacional-companias', meses,
-      [
-        { etiqueta: 'CFN SRL', datos: meses.map(m => porCfn[m] || 0), color: COLOR_CFN },
-        { etiqueta: 'Electrónica Megatone SRL', datos: meses.map(m => porEm[m] || 0), color: COLOR_EM },
-        { etiqueta: 'Confina SRL', datos: meses.map(m => porConfina[m] || 0), color: COLOR_CONFINA },
-      ],
-      [
-        { etiqueta: 'Fichas CFN', datos: meses.map(m => fichasCfn[m] || 0), color: COLOR_CFN },
-        { etiqueta: 'Fichas Megatone', datos: meses.map(m => fichasEm[m] || 0), color: COLOR_EM },
-        { etiqueta: 'Fichas Confina', datos: meses.map(m => fichasConfina[m] || 0), color: COLOR_CONFINA },
-      ]);
-  } else {
-    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-    tituloEl.textContent = `Recupero Mensual — ${nombreCia} (Judicial / Extrajudicial)`;
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor')
-      .in('parametro', [`RECUPERO ${companiaSeleccionada} JUD.`, `RECUPERO ${companiaSeleccionada} EXT.`, `CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
-      .order('mes', { ascending: true }));
-    const sumarPor = (parametro) => {
-      const acc = {};
-      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
-      return acc;
-    };
-    const meses = [...new Set(filas.map(f => f.mes))].sort();
-    const porJud = sumarPor(`RECUPERO ${companiaSeleccionada} JUD.`), porExt = sumarPor(`RECUPERO ${companiaSeleccionada} EXT.`);
-    const fichasJud = sumarPor(`CCP ${companiaSeleccionada} JUD.`), fichasExt = sumarPor(`CCP ${companiaSeleccionada} EXT.`);
-    dibujarSeguimientoJudExtra('grafico-recupero-nacional-companias', meses,
-      meses.map(m => porJud[m] || 0), meses.map(m => porExt[m] || 0),
-      meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
-  }
-}
-
-// Gráfico 2: mismo criterio, pero diario/semanal en vez de mensual.
-async function cargarSeguimientoTodasNacional(companiaSeleccionada, granularidad, dia) {
-  granularidadTodasNacional = granularidad;
-  const tituloEl = document.getElementById('titulo-grafico-seguimiento-todas');
-
-  if (companiaSeleccionada === 'GENERAL') {
-    tituloEl.textContent = 'Seguimiento — TODAS (Nacional)';
-    const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_por_compania_nacional', {
-      fecha_desde: dia ? null : obtenerFechaDesdeSelector('todas'),
-    }));
-    const filasUsar = dia ? (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia)) : (filas || []);
-    const agrupado = {};
-    filasUsar.forEach(f => {
-      const clave = dia ? f.fecha.slice(0, 7) : (granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
-      if (!agrupado[clave]) agrupado[clave] = { cfn: 0, em: 0, confina: 0, fCfn: 0, fEm: 0, fConfina: 0 };
-      agrupado[clave].cfn += Number(f.valor_cfn || 0);
-      agrupado[clave].em += Number(f.valor_em || 0);
-      agrupado[clave].confina += Number(f.valor_confina || 0);
-      agrupado[clave].fCfn += Number(f.cantidad_cfn || 0);
-      agrupado[clave].fEm += Number(f.cantidad_em || 0);
-      agrupado[clave].fConfina += Number(f.cantidad_confina || 0);
+  if (embudoParaKpi) {
+    const objetivo = objetivoRecaudacion(unidadNegocio);
+    // Base del objetivo: la deuda "congelada" al momento de la última
+    // carga de cartera completa, si ya existe esa foto; si todavía no se
+    // cargó ninguna cartera para esta unidad desde que existe esta foto,
+    // se usa la deuda en vivo como respaldo.
+    const objetivoFijo = (objetivoFijoResp.data && objetivoFijoResp.data[0]) || null;
+    const deudaBaseObjetivo = (objetivoFijo && !empresa) ? Number(objetivoFijo.deuda_total_congelada) : (embudoParaKpi.deuda_cartera || 0);
+    const metaEnPesos = deudaBaseObjetivo * objetivo;
+    const recaudado = embudoParaKpi.recaudacion || 0;
+    // Ratio = recaudado a la fecha / total de cartera asignada (congelado)
+    // — no contra el objetivo del 2%/1,5%. Se recalcula solo, día a día,
+    // a medida que se cargan pagos (el denominador no se mueve hasta la
+    // próxima carga completa de cartera).
+    const ratio = deudaBaseObjetivo ? recaudado / deudaBaseObjetivo : 0;
+    kpisHtml.push({
+      etiqueta: `Objetivo (${formateadorPorcentaje.format(objetivo)} de la cartera asignada)`,
+      valor: formateadorMonedaMasividad.format(metaEnPesos),
     });
-    const claves = Object.keys(agrupado).sort();
-    const sufCfn = dia ? ` (del 01 al ${dia})` : '';
-    ajustarAnchoScroll('scroll-grafico-seguimiento-nacional-todas', claves.length);
-    dibujarMultiSeguimiento('grafico-seguimiento-nacional-todas', claves,
-      [
-        { etiqueta: 'CFN SRL' + sufCfn, datos: claves.map(c => agrupado[c].cfn), color: COLOR_CFN },
-        { etiqueta: 'Electrónica Megatone SRL' + sufCfn, datos: claves.map(c => agrupado[c].em), color: COLOR_EM },
-        { etiqueta: 'Confina SRL' + sufCfn, datos: claves.map(c => agrupado[c].confina), color: COLOR_CONFINA },
-      ],
-      [
-        { etiqueta: 'Fichas CFN', datos: claves.map(c => agrupado[c].fCfn), color: COLOR_CFN },
-        { etiqueta: 'Fichas Megatone', datos: claves.map(c => agrupado[c].fEm), color: COLOR_EM },
-        { etiqueta: 'Fichas Confina', datos: claves.map(c => agrupado[c].fConfina), color: COLOR_CONFINA },
-      ]);
-  } else {
-    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-    tituloEl.textContent = `Seguimiento — ${nombreCia} (Nacional)`;
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('recupero_diario_detalle')
-      .select('fecha, tipo, valor, cantidad_fichas')
-      .eq('compania', companiaSeleccionada)
-      .order('fecha', { ascending: true }));
-    const agrupado = {};
-    filas.forEach(f => {
-      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-      if (f.tipo === 'JUDICIAL') {
-        agrupado[clave].judicial += Number(f.valor || 0);
-        agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
-      } else if (f.tipo === 'EXTRAJUDICIAL') {
-        agrupado[clave].extrajudicial += Number(f.valor || 0);
-        agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
-      }
+    kpisHtml.push({
+      etiqueta: 'Recaudado',
+      valor: formateadorMonedaMasividad.format(recaudado),
     });
-    const claves = Object.keys(agrupado).sort();
-    const sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-    ajustarAnchoScroll('scroll-grafico-seguimiento-nacional-todas', claves.length);
-    dibujarSeguimientoJudExtra('grafico-seguimiento-nacional-todas', claves,
-      claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
-      claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
+    kpisHtml.push({
+      etiqueta: `Ratio (sobre total asignado: ${formateadorMonedaMasividad.format(deudaBaseObjetivo)})`,
+      valor: formateadorPorcentaje.format(ratio),
+    });
   }
-}
+  document.getElementById('kpis-resumen').innerHTML = kpisHtml.map(k => `
+    <div class="tarjeta-kpi"><span class="valor">${k.valor}</span><span class="etiqueta">${k.etiqueta}</span></div>`).join('');
 
-// ============================================================
-// VISTA: POR ESTUDIO
-// ============================================================
-async function cargarSelectorEstudios() {
-  const { data: estudios } = await supabaseClient.from('estudios').select('id, nombre').order('nombre');
-  const selector = document.getElementById('selector-estudio');
-  selector.innerHTML = estudios.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
-  selector.addEventListener('change', () => cargarVistaEstudio(selector.value));
-  if (estudios.length) cargarVistaEstudio(estudios[0].id);
+  // ---- Gráfico: volumen por día (sumando todos los agentes/empresas) ----
+  const volumenPorDia = {};
+  porAgenteDia.forEach(f => { volumenPorDia[f.fecha] = (volumenPorDia[f.fecha] || 0) + Number(f.cantidad); });
+  const diasOrdenados = Object.keys(volumenPorDia).sort();
+  destruirSiExiste('grafico-volumen-dia');
+  graficos['grafico-volumen-dia'] = new Chart(document.getElementById('grafico-volumen-dia'), {
+    type: 'line',
+    data: { labels: diasOrdenados, datasets: [{ label: 'Gestiones', data: diasOrdenados.map(d => volumenPorDia[d]), borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE + '22', tension: 0.25 }] },
+    options: { responsive: true, plugins: { legend: { display: false } } },
+  });
 
-  const selectorRd = document.getElementById('rd-nacional-estudio');
-  if (selectorRd) {
-    selectorRd.innerHTML = '<option value="">Todos (nacional)</option>' +
-      estudios.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
-    selectorRd.addEventListener('change', () => cargarRdNacional(granularidadRdNacional, diaRdNacional));
-  }
-}
-
-async function cargarKpisEstudio(estudioId, companiaSeleccionada) {
-  let valorFn, fichasJud = 0, fichasExt = 0;
-  if (companiaSeleccionada === 'GENERAL') {
-    const { data: base } = await supabaseClient.from('base_gral').select('parametro, valor').eq('estudio_id', estudioId);
-    valorFn = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
-    const filasMes = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
-      .in('parametro', ['CAUSAS CON PAGOS JUD.', 'CAUSAS CON PAGOS EXT.']).order('mes', { ascending: true }));
-    const meses = [...new Set(filasMes.map(f => f.mes))].sort();
-    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS JUD.').reduce((a, f) => a + Number(f.valor), 0);
-    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === 'CAUSAS CON PAGOS EXT.').reduce((a, f) => a + Number(f.valor), 0);
-  } else {
-    const { data: base } = await supabaseClient.from('base_gral_por_estudio_compania').select('parametro, valor')
-      .eq('estudio_id', estudioId).eq('compania', companiaSeleccionada);
-    valorFn = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
-    const filasMes = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
-      .in('parametro', [`CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
-      .order('mes', { ascending: true }));
-    const meses = [...new Set(filasMes.map(f => f.mes))].sort();
-    const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-    fichasJud = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} JUD.`).reduce((a, f) => a + Number(f.valor), 0);
-    fichasExt = filasMes.filter(f => f.mes === ultimoMes && f.parametro === `CCP ${companiaSeleccionada} EXT.`).reduce((a, f) => a + Number(f.valor), 0);
-  }
-  document.getElementById('kpis-estudio').innerHTML = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorFn('RECUPERO ULT.MES CERRADO')), moneda: true },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
-    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
-    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
-    { etiqueta: 'Total cartera', valor: formateadorNumero.format(valorFn('EN GESTIÓN') + valorFn('CANCELADAS')) },
-    { etiqueta: 'En gestión', valor: formateadorNumero.format(valorFn('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorFn('INICIADAS')), sub: subPct(valorFn('INICIADAS'), valorFn('EN GESTIÓN'), 'de en gestión') },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorFn('INICIADAS TOTALES')), sub: subPct(valorFn('INICIADAS TOTALES'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorFn('CANCELADAS')), sub: subPct(valorFn('CANCELADAS'), (valorFn('EN GESTIÓN') + valorFn('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS') - valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorFn('CANCELADAS SIN INICIAR')), sub: subPct(valorFn('CANCELADAS SIN INICIAR'), valorFn('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorFn('CON EMBARGO HABERES')) },
-    { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorFn('CONTRAPARTE')) },
-  ].map(tarjetaKpiHtml).join('');
-}
-
-document.getElementById('selector-compania-estudio').addEventListener('change', (e) => {
-  if (estudioSeleccionadoActual) {
-    cargarKpisEstudio(estudioSeleccionadoActual, e.target.value);
-    cargarCaducidadEstudio(estudioSeleccionadoActual, e.target.value);
-    cargarGraficosEstudio(estudioSeleccionadoActual, e.target.value);
-    cargarPasosEstudio(estudioSeleccionadoActual, e.target.value);
-  }
-});
-
-async function cargarGraficosEstudio(estudioId, companiaSeleccionada) {
-  const tituloRecupero = document.getElementById('titulo-grafico-estudio-recupero');
-
-  if (companiaSeleccionada === 'GENERAL') {
-    tituloRecupero.textContent = 'Recupero Mensual — Total / Judicial / Extrajudicial';
-
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
-      .order('mes', { ascending: true }));
-    const meses = [...new Set(filas.map(f => f.mes))].sort();
-    const porParametro = (param) => meses.map(m => Number((filas.find(f => f.mes === m && f.parametro === param) || {}).valor || 0));
-    dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
-      porParametro('RECUPERO JUDICIAL'), porParametro('RECUPERO EXTRA'),
-      porParametro('CAUSAS CON PAGOS JUD.'), porParametro('CAUSAS CON PAGOS EXT.'));
-  } else {
-    const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-    tituloRecupero.textContent = `Recupero Mensual — ${nombreCia} (Este Estudio)`;
-
-    const filas = await consultarPaginado(() => supabaseClient
-      .from('matriz_mensual').select('mes, parametro, valor').eq('estudio_id', estudioId)
-      .in('parametro', [`RECUPERO ${companiaSeleccionada} JUD.`, `RECUPERO ${companiaSeleccionada} EXT.`, `CCP ${companiaSeleccionada} JUD.`, `CCP ${companiaSeleccionada} EXT.`])
-      .order('mes', { ascending: true }));
-    const sumarPorMes = (parametro) => {
-      const acc = {};
-      filas.filter(f => f.parametro === parametro).forEach(f => { acc[f.mes] = (acc[f.mes] || 0) + Number(f.valor); });
-      return acc;
-    };
-    const meses = [...new Set(filas.map(f => f.mes))].sort();
-    const porJud = sumarPorMes(`RECUPERO ${companiaSeleccionada} JUD.`), porExt = sumarPorMes(`RECUPERO ${companiaSeleccionada} EXT.`);
-    const fichasJud = sumarPorMes(`CCP ${companiaSeleccionada} JUD.`), fichasExt = sumarPorMes(`CCP ${companiaSeleccionada} EXT.`);
-    dibujarSeguimientoJudExtra('grafico-estudio-recupero', meses,
-      meses.map(m => porJud[m] || 0), meses.map(m => porExt[m] || 0),
-      meses.map(m => fichasJud[m] || 0), meses.map(m => fichasExt[m] || 0));
-  }
-}
-
-// Riesgo de caducidad de un estudio: barras con las causas en gestión según el
-// tiempo desde su último paso procesal (plazo de caducidad: 6 meses). Al pasar
-// el mouse por una barra se ve la cantidad, el % y el total del estudio.
-async function cargarCaducidadEstudio(estudioId, companiaSeleccionada) {
-  const nota = document.getElementById('nota-caducidad-estudio');
-  let consulta = supabaseClient.from('caducidad_estudio_compania')
-    .select('compania, al_dia, por_vencer, sin_movimiento_6m, total, fecha_corte, limite_4m, limite_6m')
-    .eq('estudio_id', estudioId);
-  if (companiaSeleccionada !== 'GENERAL') consulta = consulta.eq('compania', companiaSeleccionada);
-  const { data, error } = await consulta;
-  if (error) { nota.textContent = 'No se pudo cargar el riesgo de caducidad.'; return; }
-  const filas = data || [];
-  const suma = (campo) => filas.reduce((acc, f) => acc + Number(f[campo] || 0), 0);
-  const valores = [suma('al_dia'), suma('por_vencer'), suma('sin_movimiento_6m')];
-  const total = suma('total');
-  const corte = filas.map(f => f.fecha_corte).filter(Boolean).sort().pop();
-  const corteTxt = corte ? corte.split('-').reverse().join('/') : '—';
-  caducidadActual = { estudioId, compania: companiaSeleccionada, corte, limite4: filas[0]?.limite_4m || null, limite6: filas[0]?.limite_6m || null };
-  const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[companiaSeleccionada];
-  nota.textContent = `${nombreCia ? nombreCia + ' · ' : ''}Plazo de caducidad: 6 meses. Corte de pasos procesales: ${corteTxt}. Pasá el mouse por cada barra para ver el total.`;
-
-  destruirSiExiste('grafico-caducidad-estudio');
-  const ctx = document.getElementById('grafico-caducidad-estudio');
-  graficos['grafico-caducidad-estudio'] = new Chart(ctx, {
-    type: 'bar',
+  // ---- Gráfico: efectividad total (torta) ----
+  const totalesPorTipo = { 'CONTACTO DIRECTO': 0, 'CONTACTO INDIRECTO': 0, 'NO CONTACTO': 0 };
+  efectividad.forEach(f => { if (f.tipo_contacto in totalesPorTipo) totalesPorTipo[f.tipo_contacto] += Number(f.cantidad); });
+  destruirSiExiste('grafico-efectividad-total');
+  graficos['grafico-efectividad-total'] = new Chart(document.getElementById('grafico-efectividad-total'), {
+    type: 'doughnut',
     data: {
-      labels: ['Al día (hasta 4 meses)', 'Por vencer (4 a 6 meses)', 'Sin paso en los últimos 6 meses'],
-      datasets: [{ label: 'Causas en gestión', data: valores, backgroundColor: ['#3d8b5a', '#b07a0c', '#b23a28'] }],
+      labels: ['Contacto directo', 'Contacto indirecto', 'Sin contacto'],
+      datasets: [{ data: Object.values(totalesPorTipo), backgroundColor: [COLOR_VERDE, COLOR_TINTA, COLOR_ROJO] }],
     },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (c) => {
-              const v = Number(c.parsed.y || 0);
-              const pct = total ? (Math.round(v / total * 1000) / 10).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0,0';
-              return `${formateadorNumero.format(v)} causas (${pct}% del total)`;
-            },
-            afterLabel: () => `Total en gestión: ${formateadorNumero.format(total)}`,
-          },
-        },
-      },
-      scales: { y: { beginAtZero: true, ticks: { callback: (v) => formateadorNumero.format(v) } } },
-    },
+    options: { responsive: true },
   });
-}
 
-var caducidadActual = null;
-
-// Descarga en Excel de las causas de una categoría del riesgo de caducidad
-// (al día / por vencer / sin paso en 6 meses) del estudio y compañía elegidos.
-async function descargarCaducidadExcel(categoria) {
-  const estadoEl = document.getElementById('estado-descarga-caducidad');
-  const ca = caducidadActual;
-  if (!ca || !ca.limite4 || !ca.limite6) { estadoEl.textContent = 'No hay datos de caducidad para descargar.'; return; }
-  const botones = document.querySelectorAll('[data-caducidad]');
-  botones.forEach(b => b.disabled = true);
-  estadoEl.textContent = 'Preparando el archivo…';
-  try {
-    const columnas = 'ficha, compania, nro_expediente, juzgado, nivel, empresa, embargo, deuda_total, fecha_inicio_estudio, fecha_ultimo_pago, fecha_ultimo_paso, ultimo_paso';
-    const construir = () => {
-      let q = supabaseClient.from('cartera_causas').select(columnas)
-        .eq('estudio_id', ca.estudioId).eq('activa', true);
-      if (ca.compania !== 'GENERAL') q = q.eq('compania', ca.compania);
-      if (categoria === 'al_dia') q = q.gt('fecha_ultimo_paso', ca.limite4);
-      else if (categoria === 'por_vencer') q = q.lte('fecha_ultimo_paso', ca.limite4).gt('fecha_ultimo_paso', ca.limite6);
-      else q = q.or(`fecha_ultimo_paso.is.null,fecha_ultimo_paso.lte.${ca.limite6}`);
-      return q.order('ficha', { ascending: true });
-    };
-    const filas = await consultarPaginado(construir);
-    if (!filas.length) { estadoEl.textContent = 'No hay causas en esta categoría.'; return; }
-
-    const corteMs = ca.corte ? Date.parse(ca.corte) : null;
-    const nombresCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
-    const datos = filas.map(f => ({
-      'Ficha': f.ficha,
-      'Compañía': nombresCia[f.compania] || f.compania,
-      'Nro. expediente': f.nro_expediente && f.nro_expediente !== 'nan' ? f.nro_expediente : '',
-      'Juzgado': f.juzgado || '',
-      'Nivel': (f.nivel || '').trim(),
-      'Empresa (empleador)': f.empresa || '',
-      'Embargo': f.embargo || '',
-      'Deuda total': f.deuda_total === null ? null : Number(f.deuda_total),
-      'Fecha inicio estudio': f.fecha_inicio_estudio || '',
-      'Fecha último pago': f.fecha_ultimo_pago || '',
-      'Fecha último paso': f.fecha_ultimo_paso || '',
-      'Último paso procesal': f.ultimo_paso || '',
-      'Días desde el último paso (al corte)': f.fecha_ultimo_paso && corteMs ? Math.round((corteMs - Date.parse(f.fecha_ultimo_paso)) / 86400000) : '',
-    }));
-    const hoja = XLSX.utils.json_to_sheet(datos);
-    hoja['!cols'] = [10, 20, 16, 24, 26, 30, 8, 14, 14, 14, 14, 30, 16].map(w => ({ wch: w }));
-    const libro = XLSX.utils.book_new();
-    const nombreHoja = { al_dia: 'Al día', por_vencer: 'Por vencer', sin_movimiento: 'Sin paso 6 meses' }[categoria];
-    XLSX.utils.book_append_sheet(libro, hoja, nombreHoja);
-    const selector = document.getElementById('selector-estudio');
-    const estudio = (selector.selectedOptions[0]?.textContent || 'estudio').trim().replace(/[^\w\-]+/g, '_');
-    const cia = ca.compania === 'GENERAL' ? 'todas' : ca.compania;
-    const sufijo = { al_dia: 'al_dia', por_vencer: 'por_vencer', sin_movimiento: 'sin_paso_6_meses' }[categoria];
-    XLSX.writeFile(libro, `caducidad_${sufijo}_${estudio}_${cia}_corte_${ca.corte || ''}.xlsx`);
-    estadoEl.textContent = `Listo: ${formateadorNumero.format(filas.length)} causas descargadas.`;
-  } catch (err) {
-    console.error(err);
-    estadoEl.textContent = `Error al descargar: ${err.message}`;
-  } finally {
-    botones.forEach(b => b.disabled = false);
-  }
-}
-document.querySelectorAll('[data-caducidad]').forEach(b => {
-  b.addEventListener('click', () => descargarCaducidadExcel(b.dataset.caducidad));
-});
-
-async function cargarVistaEstudio(estudioId) {
-  estudioSeleccionadoActual = estudioId;
-  const companiaElegida = document.getElementById('selector-compania-estudio').value;
-  cargarKpisEstudio(estudioId, companiaElegida);
-  cargarGraficosEstudio(estudioId, companiaElegida);
-  cargarCaducidadEstudio(estudioId, companiaElegida);
-
-  // ---- Detalle Empresa: comparación fija CFN/Megatone/Confina para este estudio ----
-  const { data: baseEmpresa } = await supabaseClient
-    .from('base_gral_por_estudio_compania')
-    .select('compania, parametro, valor')
-    .eq('estudio_id', estudioId);
-  const porCompania = {};
-  (baseEmpresa || []).forEach(f => {
-    porCompania[f.compania] = porCompania[f.compania] || {};
-    porCompania[f.compania][f.parametro] = Number(f.valor);
+  // ---- Gráfico: por canal (tipo de acción) ----
+  const totalPorCanal = {};
+  porCanal.forEach(f => { totalPorCanal[f.tipo_accion] = (totalPorCanal[f.tipo_accion] || 0) + Number(f.cantidad); });
+  const canales = Object.keys(totalPorCanal);
+  destruirSiExiste('grafico-por-canal');
+  graficos['grafico-por-canal'] = new Chart(document.getElementById('grafico-por-canal'), {
+    type: 'doughnut',
+    data: { labels: canales, datasets: [{ data: canales.map(c => totalPorCanal[c]), backgroundColor: [COLOR_TINTA, COLOR_BRONCE, COLOR_VERDE, COLOR_ROJO, '#c9820a'] }] },
+    options: { responsive: true },
   });
-  const nombresCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
-  document.querySelector('#tabla-estudio-por-empresa tbody').innerHTML = ['CFN', 'EM', 'CONFINA'].map(cia => {
-    const v = porCompania[cia] || {};
+
+  // ---- Gráfico: por efecto (resultado de la gestión) ----
+  const top15Efectos = porEfecto.slice(0, 15);
+  destruirSiExiste('grafico-por-efecto');
+  graficos['grafico-por-efecto'] = new Chart(document.getElementById('grafico-por-efecto'), {
+    type: 'bar',
+    data: { labels: top15Efectos.map(f => f.efecto), datasets: [{ label: 'Cantidad', data: top15Efectos.map(f => Number(f.cantidad)), backgroundColor: COLOR_TINTA }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, indexAxis: 'y' },
+  });
+
+  // ---- Tabla por agente ----
+  const porAgente = {};
+  porAgenteDia.forEach(f => {
+    const clave = `${f.usuario}|${f.empresa || ''}`;
+    if (!porAgente[clave]) porAgente[clave] = { usuario: f.usuario, empresa: f.empresa, gestiones: 0, directo: 0, indirecto: 0, sinContacto: 0, dniTrabajados: 0 };
+    porAgente[clave].gestiones += Number(f.cantidad);
+  });
+  efectividad.forEach(f => {
+    const clave = `${f.usuario}|${f.empresa || ''}`;
+    if (!porAgente[clave]) porAgente[clave] = { usuario: f.usuario, empresa: f.empresa, gestiones: 0, directo: 0, indirecto: 0, sinContacto: 0, dniTrabajados: 0 };
+    // 'efectividad' ahora viene deduplicada por DNI (ultima gestion), y
+    // 'MASIVO SIN PAGO' es una 4ta categoria que solo cuenta para el
+    // denominador del % (no se muestra como columna aparte).
+    porAgente[clave].dniTrabajados += Number(f.cantidad);
+    if (f.tipo_contacto === 'CONTACTO DIRECTO') porAgente[clave].directo += Number(f.cantidad);
+    else if (f.tipo_contacto === 'CONTACTO INDIRECTO') porAgente[clave].indirecto += Number(f.cantidad);
+    else if (f.tipo_contacto === 'NO CONTACTO') porAgente[clave].sinContacto += Number(f.cantidad);
+  });
+  const filasAgente = Object.values(porAgente).sort((a, b) => String(a.empresa || '').localeCompare(String(b.empresa || '')) || b.gestiones - a.gestiones);
+  const formateadorMonedaRecupero = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  document.querySelector('#tabla-por-agente tbody').innerHTML = filasAgente.map(a => {
+    // % Efectividad del agente = contacto directo (ultima gestion por DNI)
+    // sobre el total de DNI que trabajo ese agente (incluye los DNI cuya
+    // ultima gestion quedo excluida por masiva sin pago).
+    const pct = a.dniTrabajados ? a.directo / a.dniTrabajados : 0;
+    const ext = extendidoPorUsuario[`${a.usuario}|${a.empresa || ''}`] || { promesas: 0, promesas_cumplidas: 0, recupero_total: 0 };
+    const pctCumplidas = ext.promesas ? ext.promesas_cumplidas / ext.promesas : 0;
     return `<tr>
-      <td>${nombresCia[cia]}</td>
-      <td class="numero">${formateadorMoneda.format(v['RECUPERO ULT.MES CERRADO'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['EN GESTIÓN'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['INICIADAS'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['CON EMBARGO HABERES'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['CONTRAPARTE'] || 0)}</td>
+      <td>${a.usuario}</td>
+      <td>${a.empresa || ''}</td>
+      <td class="numero">${formateadorNumero.format(a.gestiones)}</td>
+      <td class="numero">${formateadorNumero.format(a.dniTrabajados)}</td>
+      <td class="numero">${formateadorNumero.format(a.directo)}</td>
+      <td class="numero">${formateadorNumero.format(a.indirecto)}</td>
+      <td class="numero">${formateadorNumero.format(a.sinContacto)}</td>
+      <td class="numero">${formateadorPorcentaje.format(pct)}</td>
+      <td class="numero">${formateadorNumero.format(ext.promesas)}</td>
+      <td class="numero">${formateadorNumero.format(ext.promesas_cumplidas)}</td>
+      <td class="numero">${formateadorPorcentaje.format(pctCumplidas)}</td>
+      <td class="numero">${formateadorMonedaRecupero.format(ext.recupero_total)}</td>
     </tr>`;
   }).join('');
 
-  // ---- Cédulas de sentencia/liquidaciones/embargos — según la compañía elegida ----
-  cargarPasosEstudio(estudioId, companiaElegida);
-}
+  // ---- Fila de totales, sumando todas las filas de la tabla ----
+  if (filasAgente.length) {
+    const sumar = campo => filasAgente.reduce((acc, a) => acc + Number(a[campo] || 0), 0);
+    const totGestiones = sumar('gestiones');
+    const totDirecto = sumar('directo');
+    const totIndirecto = sumar('indirecto');
+    const totSinContacto = sumar('sinContacto');
+    const totDniTrabajados = sumar('dniTrabajados');
+    const totPromesas = filasAgente.reduce((acc, a) => acc + Number((extendidoPorUsuario[`${a.usuario}|${a.empresa || ''}`] || {}).promesas || 0), 0);
+    const totCumplidas = filasAgente.reduce((acc, a) => acc + Number((extendidoPorUsuario[`${a.usuario}|${a.empresa || ''}`] || {}).promesas_cumplidas || 0), 0);
+    const totRecupero = filasAgente.reduce((acc, a) => acc + Number((extendidoPorUsuario[`${a.usuario}|${a.empresa || ''}`] || {}).recupero_total || 0), 0);
+    const pctTotal = totDniTrabajados ? totDirecto / totDniTrabajados : 0;
+    const pctCumplidasTotal = totPromesas ? totCumplidas / totPromesas : 0;
 
-function cargarPasosEstudio(estudioId, companiaSeleccionada) {
-  const compania = companiaSeleccionada === 'GENERAL' ? 'TOTAL' : companiaSeleccionada;
-  const nombresCia = { TOTAL: 'Total', CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' };
-  document.getElementById('titulo-grafico-pasos-estudio').textContent =
-    `Cédulas de sentencia / liquidaciones / embargos — ${nombresCia[compania]} (Empresa)`;
-  cargarPasosDinamico('grafico-pasos-estudio-total', compania, estudioId);
+    document.querySelector('#tabla-por-agente tbody').innerHTML += `
+      <tr class="fila-mes-actual">
+        <td colspan="2"><strong>Total</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totGestiones)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totDniTrabajados)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totDirecto)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totIndirecto)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totSinContacto)}</strong></td>
+        <td class="numero"><strong>${formateadorPorcentaje.format(pctTotal)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totPromesas)}</strong></td>
+        <td class="numero"><strong>${formateadorNumero.format(totCumplidas)}</strong></td>
+        <td class="numero"><strong>${formateadorPorcentaje.format(pctCumplidasTotal)}</strong></td>
+        <td class="numero"><strong>${formateadorMonedaRecupero.format(totRecupero)}</strong></td>
+      </tr>`;
+  }
+
+  await cargarEmbudoYContactabilidad(unidadNegocio, fechaDesde, fechaHasta, carteraDniResp, pctEfectividad);
 }
 
 // ============================================================
-// VISTA: POR EMPRESA (CFN / Megatone / Confina, a nivel nacional)
+// EMBUDO DE EFECTIVIDAD Y CONTACTABILIDAD DE LA CARTERA
 // ============================================================
-let companiaSeleccionadaActual = 'CFN';
-let granularidadEmpresa = 'diario';
+const OBJETIVOS_EMBUDO = { contacto: 0.20, promesas: 0.50, cumplidas: 0.60, recaudacion: 0.02 };
+// ON CITY JUDICIAL, CFN JUDICIAL y GERENCIAR RECUPERA tienen una meta de
+// recupero mas baja (1,5%) que el resto (2%, valor por defecto).
+const UNIDADES_OBJETIVO_1_5 = ['ON CITY JUDICIAL', 'CFN JUDICIAL', 'GERENCIAR RECUPERA'];
+function objetivoRecaudacion(unidadNegocio) {
+  return UNIDADES_OBJETIVO_1_5.includes(unidadNegocio) ? 0.005 : OBJETIVOS_EMBUDO.recaudacion;
+}
 
-document.getElementById('selector-empresa').addEventListener('change', (e) => {
-  cargarVistaEmpresa(e.target.value);
-});
+async function cargarEmbudoYContactabilidad(unidadNegocio, fechaDesde, fechaHasta, embudoRespPrevio, pctEfectividadKpi) {
+  const mensajeSinUnidad = document.getElementById('embudo-mensaje-sin-unidad');
+  const contenido = document.getElementById('embudo-contenido');
+  const contactabilidadContenido = document.getElementById('contactabilidad-contenido');
 
-async function cargarVistaEmpresa(compania) {
-  companiaSeleccionadaActual = compania;
+  if (!unidadNegocio) {
+    mensajeSinUnidad.classList.remove('oculto');
+    contenido.classList.add('oculto');
+    contactabilidadContenido.classList.add('oculto');
+    return;
+  }
+  mensajeSinUnidad.classList.add('oculto');
+  contenido.classList.remove('oculto');
+  contactabilidadContenido.classList.remove('oculto');
 
-  const { data: base } = await supabaseClient.from('base_gral_por_compania').select('parametro, valor').eq('compania', compania);
-  const valorBase = (param) => Number((base || []).find(f => f.parametro === param)?.valor || 0);
+  // El embudo ya se pidio en cargarVistaResumen (para el KPI de Cartera
+  // Asignada) — se reutiliza esa respuesta en vez de pedirla de nuevo.
+  const [embudoResp, contactabilidadResp] = await Promise.all([
+    embudoRespPrevio || supabaseClient.rpc('cartera_embudo_efectividad', { p_unidad_negocio: unidadNegocio, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_empresa: empresaSeleccionada() }),
+    supabaseClient.rpc('cartera_contactabilidad', { p_unidad_negocio: unidadNegocio, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, p_empresa: empresaSeleccionada() }),
+  ]);
 
-  const nombreParam = { CFN: 'CFN', EM: 'EM', CONFINA: 'CONFINA' }[compania];
-  const filas = await consultarPaginado(() => supabaseClient
-    .from('matriz_mensual')
-    .select('mes, parametro, valor')
-    .in('parametro', [`RECUPERO ${nombreParam} JUD.`, `RECUPERO ${nombreParam} EXT.`, `CCP ${nombreParam} JUD.`, `CCP ${nombreParam} EXT.`])
-    .order('mes', { ascending: true })
-  );
-  const sumarPorMes = (parametro) => {
-    const acumulado = {};
-    filas.filter(f => f.parametro === parametro).forEach(f => { acumulado[f.mes] = (acumulado[f.mes] || 0) + Number(f.valor); });
-    return acumulado;
-  };
-  const porMesJud = sumarPorMes(`RECUPERO ${nombreParam} JUD.`);
-  const porMesExt = sumarPorMes(`RECUPERO ${nombreParam} EXT.`);
-  const porMesFichasJud = sumarPorMes(`CCP ${nombreParam} JUD.`);
-  const porMesFichasExt = sumarPorMes(`CCP ${nombreParam} EXT.`);
-  const meses = [...new Set(filas.map(f => f.mes))].sort();
-  const ultimoMes = meses.length ? meses[meses.length - 1] : null;
-  const fichasJud = porMesFichasJud[ultimoMes] || 0;
-  const fichasExt = porMesFichasExt[ultimoMes] || 0;
+  const e = (embudoResp.data && embudoResp.data[0]) || {};
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
-  document.getElementById('kpis-empresa').innerHTML = [
-    { etiqueta: 'Recupero últ. mes', valor: formateadorMoneda.format(valorBase('RECUPERO ULT.MES CERRADO')), moneda: true },
-    { etiqueta: 'Fichas con pago (últ. mes)', valor: formateadorNumero.format(fichasJud + fichasExt) },
-    { etiqueta: 'Fichas con pago judicial', valor: formateadorNumero.format(fichasJud) },
-    { etiqueta: 'Fichas con pago extrajudicial', valor: formateadorNumero.format(fichasExt) },
-    { etiqueta: 'Total cartera', valor: formateadorNumero.format(valorBase('EN GESTIÓN') + valorBase('CANCELADAS')) },
-    { etiqueta: 'En gestión', valor: formateadorNumero.format(valorBase('EN GESTIÓN')) },
-    { etiqueta: 'Iniciadas en gestión', valor: formateadorNumero.format(valorBase('INICIADAS')), sub: subPct(valorBase('INICIADAS'), valorBase('EN GESTIÓN'), 'de en gestión') },
-    { etiqueta: 'Iniciadas totales', valor: formateadorNumero.format(valorBase('INICIADAS TOTALES')), sub: subPct(valorBase('INICIADAS TOTALES'), (valorBase('EN GESTIÓN') + valorBase('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas', valor: formateadorNumero.format(valorBase('CANCELADAS')), sub: subPct(valorBase('CANCELADAS'), (valorBase('EN GESTIÓN') + valorBase('CANCELADAS')), 'del total de causas') },
-    { etiqueta: 'Canceladas iniciadas', valor: formateadorNumero.format(valorBase('CANCELADAS') - valorBase('CANCELADAS SIN INICIAR')), sub: subPct(valorBase('CANCELADAS') - valorBase('CANCELADAS SIN INICIAR'), valorBase('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Canceladas sin iniciar', valor: formateadorNumero.format(valorBase('CANCELADAS SIN INICIAR')), sub: subPct(valorBase('CANCELADAS SIN INICIAR'), valorBase('CANCELADAS'), 'de las canceladas') },
-    { etiqueta: 'Con embargo', valor: formateadorNumero.format(valorBase('CON EMBARGO HABERES')) },
-    { etiqueta: 'Contraparte', valor: formateadorNumero.format(valorBase('CONTRAPARTE')) },
-  ].map(tarjetaKpiHtml).join('');
+  // % Real de "Contacto a Titular" = el mismo % Efectividad del KPI de
+  // arriba (contacto directo sobre DNI trabajados) — no sobre el total
+  // de la Cartera Asignada. La cantidad que se muestra sigue siendo la
+  // del embudo (DNI de la cartera contactados a titular).
+  const pctContacto = pctEfectividadKpi || 0;
+  const pctPromesas = e.dni_contactados_titular ? e.dni_promesas / e.dni_contactados_titular : 0;
+  const pctCumplidas = e.dni_promesas ? e.dni_promesas_cumplidas / e.dni_promesas : 0;
+  const pctRecaudacion = e.deuda_cartera ? e.recaudacion / e.deuda_cartera : 0;
 
-  dibujarSeguimientoJudExtra('grafico-empresa-recupero', meses,
-    meses.map(m => porMesJud[m] || 0), meses.map(m => porMesExt[m] || 0),
-    meses.map(m => porMesFichasJud[m] || 0), meses.map(m => porMesFichasExt[m] || 0));
-
-  // ---- Detalle por estudio (para esta compañía) ----
-  const { data: baseEstCompania } = await supabaseClient
-    .from('base_gral_por_estudio_compania')
-    .select('parametro, valor, estudios(nombre)')
-    .eq('compania', compania);
-  const porEstudio = {};
-  (baseEstCompania || []).forEach(f => {
-    const nombre = f.estudios.nombre;
-    porEstudio[nombre] = porEstudio[nombre] || {};
-    porEstudio[nombre][f.parametro] = Number(f.valor);
-  });
-  const filasTablaEstudio = Object.entries(porEstudio)
-    .sort((a, b) => (b[1]['RECUPERO ULT.MES CERRADO'] || 0) - (a[1]['RECUPERO ULT.MES CERRADO'] || 0));
-  document.querySelector('#tabla-empresa-por-estudio tbody').innerHTML = filasTablaEstudio.map(([nombre, v]) => `
+  const filaEmbudo = (etapa, cantidad, pct, objetivo, esMoneda) => {
+    const desvio = pct - objetivo;
+    const signo = desvio >= 0 ? '+' : '';
+    const color = desvio >= 0 ? 'var(--verde-recupero)' : 'var(--rojo-alerta)';
+    return `
     <tr>
-      <td>${nombre}</td>
-      <td class="numero">${formateadorMoneda.format(v['RECUPERO ULT.MES CERRADO'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['EN GESTIÓN'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['INICIADAS'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['CON EMBARGO HABERES'] || 0)}</td>
-      <td class="numero">${formateadorNumero.format(v['CONTRAPARTE'] || 0)}</td>
-    </tr>`).join('');
-
-  // ---- Cédulas de sentencia / liquidaciones / embargos (para esta compañía) ----
-  const nombreCia = { CFN: 'CFN', EM: 'Electrónica Megatone', CONFINA: 'Confina' }[compania];
-  document.getElementById('titulo-grafico-pasos-empresa').textContent = `Cédulas De Sentencia / Liquidaciones / Embargos — ${nombreCia}`;
-  cargarPasosDinamico('grafico-pasos-empresa', compania, null);
-}
-
-
-// ============================================================
-// SEGUIMIENTO DIARIO/SEMANAL DEL RECUPERO (nacional y por estudio,
-// total y por compañía — judicial vs extrajudicial, con sus fichas)
-// ============================================================
-// Mapea cada "objetivo" del selector a: qué compañía filtrar en
-// recupero_diario_detalle, si es a nivel nacional o de un estudio, y en qué
-// canvas dibujarlo.
-const CONFIG_SEGUIMIENTO = {
-  'nacional': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-seguimiento-nacional' },
-};
-const granularidadPorObjetivo = {}; // 'diario' por defecto para cada uno
-let estudioSeleccionadoActual = null;
-
-// Agrupa una fecha en la semana a la que pertenece (lunes de esa semana),
-// para el detalle "semanal" — se arma acá mismo, no hace falta guardar nada
-// aparte: el dato diario ya alcanza.
-function claveDeSemana(fechaIso) {
-  const d = new Date(fechaIso + 'T00:00:00');
-  const diaSemana = d.getDay() || 7; // domingo=0 -> tratarlo como 7
-  d.setDate(d.getDate() - diaSemana + 1); // lunes de esa semana
-  return d.toISOString().slice(0, 10);
-}
-
-// Lee el <select class="selector-rango"> de un gráfico y devuelve la fecha
-// desde la que hay que pedir datos ('YYYY-MM-DD'), según los meses elegidos
-// (6 por defecto, o 1 año). Si no hay selector para ese objetivo, no limita.
-function obtenerFechaDesdeSelector(objetivo) {
-  const select = document.querySelector(`.selector-rango[data-objetivo="${objetivo}"]`);
-  if (!select) return null;
-  const meses = Number(select.value) || 6;
-  const hoy = new Date();
-  const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - meses, hoy.getDate());
-  return fecha.toISOString().slice(0, 10);
-}
-
-// Antes esta función agrandaba el contenedor del gráfico según la cantidad
-// de puntos, para que apareciera un scroll horizontal. Ahora que los
-// gráficos diario/semanal están acotados por el selector de rango (6 meses
-// o 1 año como máximo), ya no hace falta — el gráfico ocupa todo el
-// recuadro disponible, como antes de tener años de historial cargados. Se
-// deja la función (sin hacer nada) para no tener que tocar los ~10 lugares
-// que la llaman.
-function ajustarAnchoScroll(idContenedorScroll, cantidadPuntos, pxPorPunto = 42, minimo = 600) {
-  // no-op a propósito
-}
-
-// Agrupa filas de recupero_diario_detalle por una clave (día/semana/mes según
-// corresponda), sumando judicial/extrajudicial y sus fichas.
-function agruparJudExtraPorClave(filas, obtenerClave) {
-  const agrupado = {};
-  filas.forEach(f => {
-    const clave = obtenerClave(f);
-    if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-    if (f.tipo === 'JUDICIAL') {
-      agrupado[clave].judicial += Number(f.valor || 0);
-      agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
-    } else if (f.tipo === 'EXTRAJUDICIAL') {
-      agrupado[clave].extrajudicial += Number(f.valor || 0);
-      agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
-    }
-  });
-  return agrupado;
-}
-
-// Llena un <select> de "día del mes" con las opciones 1 a 31.
-function llenarSelectorDeDias(idSelect) {
-  const select = document.getElementById(idSelect);
-  if (!select || select.dataset.lleno) return;
-  for (let dia = 1; dia <= 31; dia++) {
-    const opcion = document.createElement('option');
-    opcion.value = String(dia);
-    opcion.textContent = `Día ${dia}`;
-    select.appendChild(opcion);
-  }
-  select.dataset.lleno = '1';
-}
-
-async function cargarSeguimiento(objetivo, granularidad, estudioId, dia) {
-  const config = CONFIG_SEGUIMIENTO[objetivo];
-  if (!config) return;
-  granularidadPorObjetivo[objetivo] = granularidad;
-  if (config.esEstudio && !estudioId) return; // todavía no hay estudio elegido
-
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
-    compania_filtro: config.compania,
-    estudio_id_filtro: config.esEstudio ? estudioId : null,
-    fecha_desde: dia ? null : obtenerFechaDesdeSelector(objetivo),
-  }));
-
-  let claves, agrupado, sufijo;
-  if (dia) {
-    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
-    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
-    claves = Object.keys(agrupado).sort();
-    sufijo = ` (del 01 al ${dia})`;
-  } else {
-    agrupado = {};
-    (filas || []).forEach(f => {
-      const clave = granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha;
-      if (!agrupado[clave]) agrupado[clave] = { judicial: 0, extrajudicial: 0, fichasJudicial: 0, fichasExtrajudicial: 0 };
-      if (f.tipo === 'JUDICIAL') {
-        agrupado[clave].judicial += Number(f.valor || 0);
-        agrupado[clave].fichasJudicial += Number(f.cantidad_fichas || 0);
-      } else if (f.tipo === 'EXTRAJUDICIAL') {
-        agrupado[clave].extrajudicial += Number(f.valor || 0);
-        agrupado[clave].fichasExtrajudicial += Number(f.cantidad_fichas || 0);
-      }
-    });
-    claves = Object.keys(agrupado).sort();
-    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-  }
-  ajustarAnchoScroll('scroll-' + config.canvas, claves.length);
-  dibujarSeguimientoJudExtra(config.canvas, claves,
-    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
-    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial),
-    sufijo);
-}
-
-
-// ---- Seguimiento del Recupero — Nacional (con modo "comparar día") ----
-let granularidadRdNacional = 'diario';
-let diaRdNacional = '';
-
-async function cargarRdNacional(granularidad, dia) {
-  granularidadRdNacional = granularidad;
-  diaRdNacional = dia;
-  const estudioId = document.getElementById('rd-nacional-estudio').value || null;
-  const nombreEstudio = estudioId ? document.querySelector(`#rd-nacional-estudio option[value="${estudioId}"]`)?.textContent : 'Nacional';
-  document.getElementById('titulo-grafico-rd-nacional').textContent = `Seguimiento Del Recupero — ${nombreEstudio}`;
-
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
-    compania_filtro: 'TOTAL',
-    estudio_id_filtro: estudioId,
-    fecha_desde: dia ? null : obtenerFechaDesdeSelector('rd-nacional'),
-  }));
-
-  let claves, agrupado, sufijo;
-  if (dia) {
-    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
-    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
-    claves = Object.keys(agrupado).sort();
-    sufijo = ` (del 01 al ${dia})`;
-  } else {
-    agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
-    claves = Object.keys(agrupado).sort();
-    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-  }
-
-  ajustarAnchoScroll('scroll-grafico-rd-nacional', claves.length);
-  dibujarSeguimientoJudExtra('grafico-rd-nacional', claves,
-    claves.map(c => agrupado[c].judicial), claves.map(c => agrupado[c].extrajudicial),
-    claves.map(c => agrupado[c].fichasJudicial), claves.map(c => agrupado[c].fichasExtrajudicial), sufijo);
-}
-
-// ---- Recupero Diario — Detallado (compañía + series elegibles + día) ----
-async function cargarRdDetalle() {
-  const companiaElegida = document.getElementById('rd-detalle-compania').value;
-  const companiaReal = companiaElegida === 'TODAS' ? 'TOTAL' : companiaElegida;
-  const seriesElegidas = Array.from(document.querySelectorAll('#rd-detalle-series input:checked')).map(el => el.value);
-  const dia = document.getElementById('rd-detalle-dia').value;
-  const granularidad = document.querySelector('.selector-granularidad[data-objetivo="rd-detalle"] .chip-granularidad.activa').dataset.granularidad;
-
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_diario_agregado', {
-    compania_filtro: companiaReal,
-    estudio_id_filtro: null,
-    fecha_desde: dia ? null : obtenerFechaDesdeSelector('rd-detalle'),
-  }));
-
-  let claves, agrupado, sufijo;
-  if (dia) {
-    const filtradas = (filas || []).filter(f => Number(f.fecha.slice(8, 10)) <= Number(dia));
-    agrupado = agruparJudExtraPorClave(filtradas, f => f.fecha.slice(0, 7));
-    claves = Object.keys(agrupado).sort();
-    sufijo = ` (del 01 al ${dia})`;
-  } else {
-    agrupado = agruparJudExtraPorClave(filas || [], f => granularidad === 'semanal' ? claveDeSemana(f.fecha) : f.fecha);
-    claves = Object.keys(agrupado).sort();
-    sufijo = granularidad === 'semanal' ? ' (semana del)' : '';
-  }
-
-  const lineas = [], barras = [];
-  if (seriesElegidas.includes('total')) {
-    lineas.push({ etiqueta: 'Total' + sufijo, datos: claves.map(c => agrupado[c].judicial + agrupado[c].extrajudicial), color: COLOR_BRONCE });
-    barras.push({ etiqueta: 'Fichas total', datos: claves.map(c => agrupado[c].fichasJudicial + agrupado[c].fichasExtrajudicial), color: COLOR_BRONCE });
-  }
-  if (seriesElegidas.includes('judicial')) {
-    lineas.push({ etiqueta: 'Judicial' + sufijo, datos: claves.map(c => agrupado[c].judicial), color: COLOR_JUDICIAL });
-    barras.push({ etiqueta: 'Fichas judicial', datos: claves.map(c => agrupado[c].fichasJudicial), color: COLOR_JUDICIAL });
-  }
-  if (seriesElegidas.includes('extrajudicial')) {
-    lineas.push({ etiqueta: 'Extrajudicial' + sufijo, datos: claves.map(c => agrupado[c].extrajudicial), color: COLOR_EXTRAJUDICIAL });
-    barras.push({ etiqueta: 'Fichas extrajudicial', datos: claves.map(c => agrupado[c].fichasExtrajudicial), color: COLOR_EXTRAJUDICIAL });
-  }
-
-  ajustarAnchoScroll('scroll-grafico-rd-detalle', claves.length);
-  dibujarMultiSeguimiento('grafico-rd-detalle', claves, lineas, barras);
-}
-
-// ---- Recaudación acumulada del mes — comparativo (del 1 al día de hoy) ----
-const NOMBRES_MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-
-async function cargarRdAcumuladoMes() {
-  const companiasElegidas = Array.from(document.querySelectorAll('#rd-acumulado-series input:checked')).map(el => el.value);
-  const tiposElegidos = Array.from(document.querySelectorAll('#rd-acumulado-tipos input:checked')).map(el => el.value);
-  const mostrarFichas = document.getElementById('rd-acumulado-fichas').checked;
-  const columnasCompania = [
-    { valor: 'total', etiqueta: 'Total', compania: 'TOTAL' },
-    { valor: 'CFN', etiqueta: 'CFN', compania: 'CFN' },
-    { valor: 'EM', etiqueta: 'EMSRL', compania: 'EM' },
-    { valor: 'CONFINA', etiqueta: 'Confina', compania: 'CONFINA' },
-  ].filter(c => companiasElegidas.includes(c.valor));
-  const columnasTipo = [
-    { valor: 'combinado', etiqueta: '' },
-    { valor: 'JUDICIAL', etiqueta: 'JU' },
-    { valor: 'EXTRAJUDICIAL', etiqueta: 'EX' },
-  ].filter(t => tiposElegidos.includes(t.valor));
-
-  if (!columnasCompania.length || !columnasTipo.length) {
-    document.getElementById('rd-acumulado-encabezado').innerHTML = '<th>Mes</th>';
-    document.querySelector('#tabla-rd-acumulado tbody').innerHTML = '';
-    return;
-  }
-
-  const hoy = new Date();
-  const diaElegido = document.getElementById('selector-dia-rd-acumulado').value;
-  const diaLimite = diaElegido ? Number(diaElegido) : hoy.getDate();
-
-  document.getElementById('titulo-rd-acumulado').textContent =
-    `Recaudación Acumulada Del Mes — Comparativo (Del 1 Al ${String(diaLimite).padStart(2, '0')}, Mes Actual Primero)`;
-
-  const mesesAtras = Number(document.querySelector('.selector-rango[data-objetivo="rd-acumulado"]')?.value) || 6;
-  const filas = await consultarPaginado(() => supabaseClient.rpc('recupero_acumulado_mensual', { dia_limite: diaLimite, meses_atras: mesesAtras }));
-
-  // acumulado[mes][compania][tipo] = { valor, fichas } ('combinado' = judicial + extrajudicial)
-  const acumulado = {};
-  (filas || []).forEach(f => {
-    if (!acumulado[f.mes]) acumulado[f.mes] = {};
-    if (!acumulado[f.mes][f.compania]) {
-      acumulado[f.mes][f.compania] = {
-        JUDICIAL: { valor: 0, fichas: 0 },
-        EXTRAJUDICIAL: { valor: 0, fichas: 0 },
-      };
-    }
-    if (f.tipo === 'JUDICIAL' || f.tipo === 'EXTRAJUDICIAL') {
-      acumulado[f.mes][f.compania][f.tipo].valor += Number(f.valor || 0);
-      acumulado[f.mes][f.compania][f.tipo].fichas += Number(f.cantidad_fichas || 0);
-    }
-  });
-
-  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
-  const otrosMeses = Object.keys(acumulado).filter(m => m !== mesActual).sort().reverse();
-  const mesesOrdenados = [mesActual, ...otrosMeses];
-
-  // Columnas = combinación compañía x tipo elegidos — cada una con su columna
-  // de monto y, si está tildado el checkbox, una columna extra de fichas al lado.
-  const columnas = [];
-  columnasCompania.forEach(c => columnasTipo.forEach(t => {
-    const etiquetaBase = t.valor === 'combinado' ? c.etiqueta : `${c.etiqueta} — ${t.etiqueta}`;
-    columnas.push({ etiqueta: etiquetaBase, compania: c.compania, tipo: t.valor, esFichas: false });
-    if (mostrarFichas) {
-      columnas.push({ etiqueta: `${etiquetaBase} (fichas)`, compania: c.compania, tipo: t.valor, esFichas: true });
-    }
-  }));
-
-  document.getElementById('rd-acumulado-encabezado').innerHTML =
-    '<th>Mes</th>' + columnas.map(c => `<th class="numero">${c.etiqueta}</th>`).join('');
-
-  const tabla = document.getElementById('tabla-rd-acumulado');
-  tabla.style.minWidth = (140 + columnas.length * 110) + 'px';
-
-  document.querySelector('#tabla-rd-acumulado tbody').innerHTML = mesesOrdenados.map(mes => {
-    const [anio, mesNum] = mes.split('-');
-    const etiquetaMes = `${NOMBRES_MES[Number(mesNum) - 1]} ${anio}` + (mes === mesActual ? ' (actual)' : '');
-    const datosCia = acumulado[mes] || {};
-    return `<tr${mes === mesActual ? ' class="fila-mes-actual"' : ''}>
-      <td>${etiquetaMes}</td>
-      ${columnas.map(c => {
-        const datosMes = datosCia[c.compania] || { JUDICIAL: { valor: 0, fichas: 0 }, EXTRAJUDICIAL: { valor: 0, fichas: 0 } };
-        if (c.tipo === 'combinado') {
-          const valor = datosMes.JUDICIAL.valor + datosMes.EXTRAJUDICIAL.valor;
-          const fichas = datosMes.JUDICIAL.fichas + datosMes.EXTRAJUDICIAL.fichas;
-          return `<td class="numero">${c.esFichas ? formateadorNumero.format(fichas) : formateadorMoneda.format(valor)}</td>`;
-        }
-        const dato = datosMes[c.tipo] || { valor: 0, fichas: 0 };
-        return `<td class="numero">${c.esFichas ? formateadorNumero.format(dato.fichas) : formateadorMoneda.format(dato.valor)}</td>`;
-      }).join('')}
+      <td>${etapa}</td>
+      <td class="numero">${esMoneda ? formateadorMoneda.format(cantidad) : formateadorNumero.format(cantidad)}</td>
+      <td class="numero">${formateadorPorcentaje.format(pct)}</td>
+      <td class="numero">${formateadorPorcentaje.format(objetivo)}</td>
+      <td class="numero" style="color:${color}; font-weight:600;">${signo}${formateadorPorcentaje.format(desvio)}</td>
     </tr>`;
-  }).join('');
-}
+  };
 
-document.getElementById('rd-nacional-dia').addEventListener('change', (e) => {
-  cargarRdNacional(granularidadRdNacional, e.target.value);
-});
-document.getElementById('rd-detalle-compania').addEventListener('change', cargarRdDetalle);
-document.getElementById('rd-detalle-dia').addEventListener('change', cargarRdDetalle);
-document.querySelectorAll('#rd-detalle-series input').forEach(cb => cb.addEventListener('change', cargarRdDetalle));
-document.querySelectorAll('#rd-acumulado-series input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
-document.querySelectorAll('#rd-acumulado-tipos input').forEach(cb => cb.addEventListener('change', cargarRdAcumuladoMes));
-document.getElementById('rd-acumulado-fichas').addEventListener('change', cargarRdAcumuladoMes);
-document.getElementById('selector-dia-rd-acumulado').addEventListener('change', cargarRdAcumuladoMes);
-document.getElementById('selector-dia-nacional').addEventListener('change', (e) => {
-  diaNacional = e.target.value;
-  cargarSeguimiento('nacional', granularidadPorObjetivo['nacional'] || 'diario', null, diaNacional);
-});
-document.getElementById('selector-dia-todas').addEventListener('change', (e) => {
-  diaTodas = e.target.value;
-  cargarSeguimientoTodasNacional('GENERAL', granularidadTodasNacional, diaTodas);
-});
+  const filaSoloMonto = (etapa, cantidad) => `
+    <tr>
+      <td>${etapa}</td>
+      <td class="numero">${formateadorMoneda.format(cantidad)}</td>
+      <td class="numero">—</td>
+      <td class="numero">—</td>
+      <td class="numero">—</td>
+    </tr>`;
 
-function cargarTodosLosSeguimientos(esEstudio, estudioId) {
-  Object.keys(CONFIG_SEGUIMIENTO)
-    .filter(objetivo => CONFIG_SEGUIMIENTO[objetivo].esEstudio === esEstudio)
-    .forEach(objetivo => cargarSeguimiento(objetivo, granularidadPorObjetivo[objetivo] || 'diario', estudioId, objetivo === 'nacional' ? diaNacional : ''));
-}
+  const esUnidadJudicial = unidadNegocio === 'ON CITY JUDICIAL' || unidadNegocio === 'CFN JUDICIAL';
 
-// Recarga el gráfico correspondiente a un objetivo, respetando la
-// granularidad actual — se usa tanto al cambiar Diario/Semanal como al
-// cambiar el selector de rango (6 meses / 1 año).
-function recargarGraficoPorObjetivo(objetivo, granularidad) {
-  if (objetivo === 'rd-acumulado') {
-    cargarRdAcumuladoMes();
-    return;
-  }
-  if (objetivo === 'todas') {
-    cargarSeguimientoTodasNacional('GENERAL', granularidad, diaTodas);
-    return;
-  }
-  if (objetivo === 'rd-nacional') {
-    cargarRdNacional(granularidad, diaRdNacional);
-    return;
-  }
-  if (objetivo === 'rd-detalle') {
-    cargarRdDetalle();
-    return;
-  }
-  const config = CONFIG_SEGUIMIENTO[objetivo];
-  if (config) cargarSeguimiento(objetivo, granularidad, config.esEstudio ? estudioSeleccionadoActual : null, objetivo === 'nacional' ? diaNacional : '');
-}
+  document.querySelector('#tabla-embudo tbody').innerHTML =
+    `<tr><td><strong>Cartera Asignada (DNI)</strong></td><td class="numero"><strong>${formateadorNumero.format(e.dni_cartera || 0)}</strong></td><td class="numero">—</td><td class="numero">—</td><td class="numero">—</td></tr>` +
+    filaEmbudo('Contacto a Titular', e.dni_contactados_titular || 0, pctContacto, OBJETIVOS_EMBUDO.contacto, false) +
+    filaEmbudo('Promesas de Pago', e.dni_promesas || 0, pctPromesas, OBJETIVOS_EMBUDO.promesas, false) +
+    filaEmbudo('Promesas Cumplidas', e.dni_promesas_cumplidas || 0, pctCumplidas, OBJETIVOS_EMBUDO.cumplidas, false) +
+    filaEmbudo('Recaudación (sobre Cartera Asignada)', e.recaudacion || 0, pctRecaudacion, objetivoRecaudacion(unidadNegocio), true) +
+    (esUnidadJudicial ? filaSoloMonto('Recaudación (Total Compañía)', e.recaudacion_total_compania || 0) : '');
 
-document.querySelectorAll('.selector-granularidad').forEach(selector => {
-  selector.addEventListener('click', (e) => {
-    const boton = e.target.closest('.chip-granularidad');
-    if (!boton) return;
-    selector.querySelectorAll('.chip-granularidad').forEach(b => b.classList.remove('activa'));
-    boton.classList.add('activa');
-    recargarGraficoPorObjetivo(selector.dataset.objetivo, boton.dataset.granularidad);
+
+  const c = (contactabilidadResp.data && contactabilidadResp.data[0]) || {};
+  destruirSiExiste('grafico-contactabilidad');
+  graficos['grafico-contactabilidad'] = new Chart(document.getElementById('grafico-contactabilidad'), {
+    type: 'doughnut',
+    data: {
+      labels: ['DNI gestionados', 'DNI sin gestión'],
+      datasets: [{ data: [c.dni_gestionados || 0, c.dni_sin_gestion || 0], backgroundColor: [COLOR_VERDE, COLOR_ROJO] }],
+    },
+    options: { responsive: true },
   });
-});
-
-document.querySelectorAll('.selector-rango').forEach(selector => {
-  selector.addEventListener('change', () => {
-    const objetivo = selector.dataset.objetivo;
-    const selectorGranularidad = document.querySelector(`.selector-granularidad[data-objetivo="${objetivo}"] .chip-granularidad.activa`);
-    const granularidad = selectorGranularidad ? selectorGranularidad.dataset.granularidad : (granularidadPorObjetivo[objetivo] || 'diario');
-    recargarGraficoPorObjetivo(objetivo, granularidad);
-  });
-});
+}
 
 // ============================================================
-// CÉDULAS DE SENTENCIA / LIQUIDACIONES / EMBARGOS, POR COMPAÑÍA
-// (nacional y por estudio — cantidad de fichas por mes, sin selector de
-// granularidad porque Pasos Procesales se carga a nivel mensual)
+// CARGA DE GESTIONES
 // ============================================================
-const CONFIG_PASOS_DETALLE = {
-  'nacional-total': { compania: 'TOTAL', esEstudio: false, canvas: 'grafico-pasos-nacional-total' },
-};
+document.getElementById('form-cargar-gestiones').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('carga-estado');
+  const boton = document.getElementById('btn-cargar-gestiones');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
 
-// Gráfico de pasos procesales DINÁMICO: se usa tanto en "Por Empresa" (según
-// la compañía elegida, a nivel nacional) como en "Por Estudio" (según la
-// compañía elegida, para el estudio seleccionado) — reemplaza a los 3+4
-// gráficos fijos que había antes por compañía.
-async function cargarPasosDinamico(idCanvas, compania, estudioId) {
-  const filas = await consultarPaginado(() => {
-    let q = supabaseClient.from('pasos_mensual_detalle')
-      .select('mes, metrica, cantidad_fichas')
-      .eq('compania', compania)
-      .order('mes', { ascending: true });
-    if (estudioId) q = q.eq('estudio_id', estudioId);
-    return q;
-  });
-  const agrupado = {};
-  filas.forEach(f => {
-    if (!agrupado[f.mes]) agrupado[f.mes] = { sentencia: 0, liquidacion: 0, embargo: 0 };
-    if (f.metrica === 'SENTENCIA') agrupado[f.mes].sentencia += Number(f.cantidad_fichas || 0);
-    else if (f.metrica === 'LIQUIDACION') agrupado[f.mes].liquidacion += Number(f.cantidad_fichas || 0);
-    else if (f.metrica === 'EMBARGO') agrupado[f.mes].embargo += Number(f.cantidad_fichas || 0);
-  });
-  const meses = Object.keys(agrupado).sort();
-  dibujarPasosPorMes(idCanvas, meses,
-    meses.map(m => agrupado[m].sentencia), meses.map(m => agrupado[m].liquidacion), meses.map(m => agrupado[m].embargo));
-}
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('archivo-gestiones').files[0]);
 
-async function cargarPasosDetalle(objetivo, estudioId) {
-  const config = CONFIG_PASOS_DETALLE[objetivo];
-  if (!config) return;
-  if (config.esEstudio && !estudioId) return;
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-gestiones`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
 
-  const filas = await consultarPaginado(() => {
-    let q = supabaseClient.from('pasos_mensual_detalle')
-      .select('mes, metrica, cantidad_fichas')
-      .eq('compania', config.compania)
-      .order('mes', { ascending: true });
-    if (config.esEstudio) q = q.eq('estudio_id', estudioId);
-    return q;
-  });
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — las gestiones ya están cargadas.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
 
-  const agrupado = {};
-  filas.forEach(f => {
-    if (!agrupado[f.mes]) agrupado[f.mes] = { sentencia: 0, liquidacion: 0, embargo: 0 };
-    if (f.metrica === 'SENTENCIA') agrupado[f.mes].sentencia += Number(f.cantidad_fichas || 0);
-    else if (f.metrica === 'LIQUIDACION') agrupado[f.mes].liquidacion += Number(f.cantidad_fichas || 0);
-    else if (f.metrica === 'EMBARGO') agrupado[f.mes].embargo += Number(f.cantidad_fichas || 0);
-  });
-  const meses = Object.keys(agrupado).sort();
-  dibujarPasosPorMes(config.canvas, meses,
-    meses.map(m => agrupado[m].sentencia), meses.map(m => agrupado[m].liquidacion), meses.map(m => agrupado[m].embargo));
-}
-
-function cargarTodosLosPasosDetalle(esEstudio, estudioId) {
-  Object.keys(CONFIG_PASOS_DETALLE)
-    .filter(objetivo => CONFIG_PASOS_DETALLE[objetivo].esEstudio === esEstudio)
-    .forEach(objetivo => cargarPasosDetalle(objetivo, estudioId));
-}
-
-
-// Después de subir los archivos, el servidor sigue procesando en segundo
-// plano. En vez de obligar a refrescar la página a mano, consultamos el
-// Historial de Cargas cada 8 segundos hasta ver que terminó (ok o error), y
-// ahí actualizamos el dashboard solos.
 async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExito) {
-  const maxIntentos = 90; // 90 x 8s = 12 minutos como máximo
+  const maxIntentos = 60; // 60 x 8s = 8 minutos como máximo
   for (let intento = 0; intento < maxIntentos; intento++) {
     await new Promise(r => setTimeout(r, 8000));
     const { data } = await supabaseClient
@@ -1213,11 +669,6 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
         estadoEl.textContent = mensajeExito || `Listo: ${filaFinal.mensaje}`;
         estadoEl.className = 'mensaje-estado ok';
         cargarVistaResumen();
-        cargarSelectorEstudios();
-        cargarVistaEmpresa(companiaSeleccionadaActual);
-        cargarRdNacional(granularidadRdNacional, diaRdNacional);
-        cargarRdDetalle();
-        cargarRdAcumuladoMes();
       } else {
         estadoEl.textContent = `Error: ${filaFinal.mensaje}`;
         estadoEl.className = 'mensaje-estado error';
@@ -1231,293 +682,11 @@ async function esperarFinalizacionYRefrescar(estadoEl, horaInicioIso, mensajeExi
   cargarLogCargas();
 }
 
-document.getElementById('form-carga').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('carga-estado');
-  const boton = document.getElementById('btn-cargar');
-  estadoEl.textContent = 'Subiendo los archivos… con archivos grandes puede tardar varios minutos, no cierres esta pestaña.';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('cartera', document.getElementById('archivo-cartera').files[0]);
-  formData.append('recupero', document.getElementById('archivo-recupero').files[0]);
-  formData.append('juzgados', document.getElementById('archivo-juzgados').files[0]);
-  formData.append('abogados', document.getElementById('archivo-abogados').files[0]);
-  formData.append('pasos', document.getElementById('archivo-pasos').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Archivos recibidos. Procesando en el servidor — esta pantalla se va a actualizar sola cuando termine, no hace falta que la refresques.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-incremental').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('incremental-estado');
-  const boton = document.getElementById('btn-incremental');
-  estadoEl.textContent = 'Subiendo… puede tardar unos minutos, no cierres esta pestaña.';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const mesElegido = document.getElementById('incremental-mes').value; // 'YYYY-MM-DD'
-  const formData = new FormData();
-  formData.append('mes', mesElegido);
-  formData.append('altas', document.getElementById('incremental-altas').files[0]);
-  formData.append('bajas', document.getElementById('incremental-bajas').files[0]);
-  formData.append('recupero_mes', document.getElementById('incremental-recupero').files[0]);
-  formData.append('pasos_mes', document.getElementById('incremental-pasos').files[0]);
-  const archivoJuzgados = document.getElementById('incremental-juzgados').files[0];
-  const archivoAbogados = document.getElementById('incremental-abogados').files[0];
-  if (archivoJuzgados) formData.append('juzgados', archivoJuzgados);
-  if (archivoAbogados) formData.append('abogados', archivoAbogados);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-incremental`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Archivos recibidos. Procesando en el servidor — esta pantalla se va a actualizar sola cuando termine, no hace falta que la refresques.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Matriz ya está actualizada.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-backfill-cancelados').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('backfill-cancelados-estado');
-  const boton = document.getElementById('btn-backfill-cancelados');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('archivo', document.getElementById('backfill-cancelados-archivo').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-cancelados`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — las causas indicadas ya están dadas de baja.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-ultimo-paso').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('ultimo-paso-estado');
-  const boton = document.getElementById('btn-ultimo-paso');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  Array.from(document.getElementById('ultimo-paso-archivos').files).forEach(f => formData.append('archivos', f));
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/cargar-ultimo-paso`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el último paso procesal de cada causa quedó cargado.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-backfill-estudio').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('backfill-estudio-estado');
-  const boton = document.getElementById('btn-backfill-estudio');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('archivo', document.getElementById('backfill-estudio-archivo').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-estudio`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el estudio de esas fichas ya está corregido.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-backfill-compania').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('backfill-estado');
-  const boton = document.getElementById('btn-backfill-compania');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('archivo', document.getElementById('backfill-archivo').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/backfill-compania`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Compañía ya está actualizada. Revisá "Por Empresa".');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-recupero-diario').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('rd-estado');
-  const boton = document.getElementById('btn-recupero-diario');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('archivo', document.getElementById('rd-archivo').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-recupero-diario`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el Recupero del día ya está cargado.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
-document.getElementById('form-pasos-historico').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const estadoEl = document.getElementById('pasos-historico-estado');
-  const boton = document.getElementById('btn-pasos-historico');
-  estadoEl.textContent = 'Subiendo…';
-  estadoEl.className = 'mensaje-estado';
-  boton.disabled = true;
-  const horaInicio = new Date().toISOString();
-
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  const formData = new FormData();
-  formData.append('mes', document.getElementById('pasos-historico-mes').value);
-  formData.append('pasos_mes', document.getElementById('pasos-historico-archivo').files[0]);
-
-  try {
-    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-pasos-historico`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const resultado = await respuesta.json();
-    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
-
-    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
-    estadoEl.className = 'mensaje-estado ok';
-    cargarLogCargas();
-    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — Pasos Procesales de ese mes ya está cargado.');
-  } catch (err) {
-    estadoEl.textContent = `Error: ${err.message}`;
-    estadoEl.className = 'mensaje-estado error';
-  } finally {
-    boton.disabled = false;
-  }
-});
-
 async function cargarLogCargas() {
+  // cargas_log es una sola tabla compartida por los 3 tipos de carga
+  // (Gestiones, Recupero, Cartera) — se muestra el mismo historial en
+  // las 3 pestañas, así siempre se ve todo lo que se subió, sin
+  // importar desde qué pestaña se hizo.
   const { data: log } = await supabaseClient
     .from('cargas_log')
     .select('subido_en, subido_por, estado, mensaje')
@@ -1530,403 +699,786 @@ async function cargarLogCargas() {
       <td>${f.estado}</td>
       <td>${f.mensaje || ''}</td>
     </tr>`).join('');
-  document.querySelector('#tabla-log tbody').innerHTML = filasHtml;
-  const tablaIncremental = document.querySelector('#tabla-log-incremental tbody');
-  if (tablaIncremental) tablaIncremental.innerHTML = filasHtml;
+  ['#tabla-log', '#tabla-log-recupero', '#tabla-log-cartera', '#tabla-log-baja-cartera', '#tabla-log-masivos'].forEach(selector => {
+    const tbody = document.querySelector(`${selector} tbody`);
+    if (tbody) tbody.innerHTML = filasHtml;
+  });
 }
 
 // ============================================================
-// HELPERS DE GRÁFICOS (Chart.js)
+// DAR DE BAJA CARTERA (mensual, unidades Tercerizadas)
 // ============================================================
-function destruirSiExiste(id) {
-  if (graficos[id]) { graficos[id].destroy(); delete graficos[id]; }
+document.getElementById('form-baja-cartera').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('baja-cartera-estado');
+  const boton = document.getElementById('btn-baja-cartera');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('archivo-baja-cartera').files[0]);
+  formData.append('unidad_negocio', document.getElementById('baja-unidad-negocio').value);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/baja-cartera`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — las bajas ya se aplicaron.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ============================================================
+// CARGA DE RECUPERO
+// ============================================================
+document.getElementById('form-cargar-recupero').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('recupero-estado');
+  const boton = document.getElementById('btn-cargar-recupero');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('archivo-recupero').files[0]);
+  formData.append('unidad_negocio', document.getElementById('recupero-unidad-negocio').value);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-recupero`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — el Recupero ya está cargado.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ============================================================
+// CARGA DE CARTERA (semanal, por unidad de negocio)
+// ============================================================
+document.getElementById('form-cargar-cartera').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('cartera-estado');
+  const boton = document.getElementById('btn-cargar-cartera');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+  const horaInicio = new Date().toISOString();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('archivo-cartera').files[0]);
+  formData.append('unidad_negocio', document.getElementById('cartera-unidad-negocio').value);
+  formData.append('solo_actualizar_existentes', document.getElementById('cartera-solo-actualizar').checked);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-cartera`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine (puede tardar un poco más porque también calcula la reasignación por días).';
+    estadoEl.className = 'mensaje-estado ok';
+    cargarLogCargas();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — la Cartera ya está cargada.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ============================================================
+// CONFIGURACION DE AGENTES (alta / baja logica)
+// ============================================================
+document.getElementById('form-alta-agente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('alta-agente-estado');
+  const boton = document.getElementById('btn-alta-agente');
+  estadoEl.textContent = 'Guardando…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('unidad_negocio', document.getElementById('alta-unidad-negocio').value);
+  formData.append('box', document.getElementById('alta-box').value);
+  formData.append('agente', document.getElementById('alta-agente').value);
+  formData.append('horas', document.getElementById('alta-horas').value);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/agentes-box/alta`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = resultado.mensaje || 'Agente agregado.';
+    estadoEl.className = 'mensaje-estado ok';
+    document.getElementById('form-alta-agente').reset();
+    cargarTablaAgentesConfig();
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+document.getElementById('config-unidad-negocio').addEventListener('change', cargarTablaAgentesConfig);
+
+async function cargarTablaAgentesConfig() {
+  const unidad = document.getElementById('config-unidad-negocio').value;
+  let query = supabaseClient.from('agentes_box').select('unidad_negocio, box, agente, horas, activo').order('unidad_negocio').order('box').order('agente');
+  if (unidad) query = query.eq('unidad_negocio', unidad);
+  const { data } = await query;
+
+  document.querySelector('#tabla-agentes-config tbody').innerHTML = (data || []).map(a => `
+    <tr>
+      <td>${a.unidad_negocio}</td>
+      <td>${a.box}</td>
+      <td>${a.agente}${a.horas == null ? ' <span class="etiqueta-alias">(alias de escritura — no suma horas aparte)</span>' : ''}</td>
+      <td class="numero">${a.horas != null ? a.horas : '—'}</td>
+      <td>${a.activo ? 'Activo' : 'Baja'}</td>
+      <td><button type="button" class="btn-secundario btn-toggle-agente" data-unidad="${a.unidad_negocio}" data-box="${a.box}" data-agente="${a.agente}" data-activo="${a.activo}">${a.activo ? 'Dar de baja' : 'Reactivar'}</button></td>
+    </tr>`).join('');
+
+  document.querySelectorAll('.btn-toggle-agente').forEach(boton => {
+    boton.addEventListener('click', async () => {
+      const { unidad: unidadNegocio, box, agente, activo } = boton.dataset;
+      const accion = activo === 'true' ? 'baja' : 'reactivar';
+      boton.disabled = true;
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const formData = new FormData();
+      formData.append('unidad_negocio', unidadNegocio);
+      formData.append('box', box);
+      formData.append('agente', agente);
+      try {
+        const respuesta = await fetch(`${CONFIG.BACKEND_URL}/agentes-box/${accion}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+          body: formData,
+        });
+        const resultado = await respuesta.json();
+        if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+        cargarTablaAgentesConfig();
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+        boton.disabled = false;
+      }
+    });
+  });
 }
 
-function dibujarLinea(id, etiquetas, series) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  graficos[id] = new Chart(ctx, {
-    type: 'line',
+document.getElementById('btn-reasignar-vacios').addEventListener('click', async () => {
+  const unidad = document.getElementById('config-unidad-negocio').value;
+  const estadoEl = document.getElementById('reasignar-vacios-estado');
+  if (!unidad) {
+    estadoEl.textContent = 'Elegí primero una unidad en el filtro.';
+    estadoEl.className = 'mensaje-estado error';
+    return;
+  }
+  const boton = document.getElementById('btn-reasignar-vacios');
+  boton.disabled = true;
+  estadoEl.textContent = 'Calculando…';
+  estadoEl.className = 'mensaje-estado';
+  const llamar = async (simular) => {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const formData = new FormData();
+    formData.append('unidad_negocio', unidad);
+    formData.append('simular', simular ? 'true' : 'false');
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/reasignar-cartera-boxes-vacios`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+    return resultado;
+  };
+  try {
+    const sim = await llamar(true);
+    if (!sim.fichas) {
+      estadoEl.textContent = 'No hay boxes sin agentes con cartera para reasignar.';
+      estadoEl.className = 'mensaje-estado ok';
+      return;
+    }
+    const detalle = Object.entries(sim.destino).map(([b, n]) => `  ${b}: +${n}`).join('\n');
+    const ok = confirm(`${unidad}\n\nBoxes sin agentes: ${sim.boxes_vacios.join(', ')}\nSe reasignan ${sim.fichas} fichas (${sim.dnis} DNI):\n${detalle}\n\n¿Aplicar?`);
+    if (!ok) {
+      estadoEl.textContent = 'Cancelado, no se modificó nada.';
+      return;
+    }
+    estadoEl.textContent = 'Aplicando…';
+    const res = await llamar(false);
+    estadoEl.textContent = `Listo: ${res.fichas} fichas (${res.dnis} DNI) reasignadas.`;
+    estadoEl.className = 'mensaje-estado ok';
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+document.querySelector('[data-vista="configuracion"]').addEventListener('click', cargarTablaAgentesConfig);
+
+// ============================================================
+// ALTA DE USUARIOS (login a la pagina)
+// ============================================================
+document.getElementById('form-alta-usuario').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('alta-usuario-estado');
+  const boton = document.getElementById('btn-alta-usuario');
+  estadoEl.textContent = 'Creando…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('email', document.getElementById('alta-usuario-email').value);
+  formData.append('password', document.getElementById('alta-usuario-password').value);
+  formData.append('unidad_negocio', document.getElementById('alta-usuario-unidad').value);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/usuarios/alta`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = resultado.mensaje || 'Usuario creado.';
+    estadoEl.className = 'mensaje-estado ok';
+    document.getElementById('form-alta-usuario').reset();
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ============================================================
+// SEGUIMIENTO: helpers compartidos
+// ============================================================
+async function llenarSelectorUnidadSimple(idSelect) {
+  const { data } = await supabaseClient.rpc('unidades_negocio_disponibles');
+  const select = document.getElementById(idSelect);
+  (data || []).forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.unidad_negocio;
+    opt.textContent = f.unidad_negocio;
+    select.appendChild(opt);
+  });
+}
+
+function descargarComoCsv(nombreArchivo, columnas, filas) {
+  const escapar = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const lineas = [columnas.map(escapar).join(',')];
+  filas.forEach(f => lineas.push(columnas.map(c => escapar(f[c])).join(',')));
+  const blob = new Blob(['\uFEFF' + lineas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Las funciones de Supabase devuelven como maximo 1000 filas por
+// llamada -> se pagina con .range() hasta que una pagina vuelva con
+// menos de 1000, para traer TODO el resultado sin importar el tamaño.
+async function llamarRpcPaginado(nombreFuncion, parametros) {
+  const filas = [];
+  const tamanoPagina = 1000;
+  let desde = 0;
+  while (true) {
+    const { data, error } = await supabaseClient
+      .rpc(nombreFuncion, parametros)
+      .range(desde, desde + tamanoPagina - 1);
+    if (error) throw new Error(error.message);
+    filas.push(...(data || []));
+    if (!data || data.length < tamanoPagina) break;
+    desde += tamanoPagina;
+  }
+  return filas;
+}
+
+// ============================================================
+// PROMESAS VIGENTES
+// ============================================================
+// (llamadas movidas a mostrarApp, ver mas abajo -> estas quedan sin uso pero no rompen nada al quedar duplicadas)
+let ultimasFilasPV = [];
+document.getElementById('pv-unidad-negocio').addEventListener('change', cargarPromesasVigentes);
+document.querySelector('[data-vista="promesas-vigentes"]').addEventListener('click', () => {
+  if (document.getElementById('pv-unidad-negocio').value) cargarPromesasVigentes();
+});
+
+async function cargarPromesasVigentes() {
+  const unidad = document.getElementById('pv-unidad-negocio').value;
+  if (!unidad) return;
+  const data = await llamarRpcPaginado('promesas_vigentes_lista', { p_unidad_negocio: unidad, fecha_desde: null, fecha_hasta: null });
+  ultimasFilasPV = data || [];
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+
+  document.getElementById('pv-kpis').innerHTML = `
+    <div class="tarjeta-kpi"><span class="valor">${formateadorNumero.format(ultimasFilasPV.length)}</span><span class="etiqueta">Promesas vigentes</span></div>`;
+
+  document.querySelector('#tabla-pv tbody').innerHTML = ultimasFilasPV.map(f => `
+    <tr>
+      <td>${f.dni_cliente}</td><td>${f.nombre_cliente || ''}</td><td>${f.usuario}</td><td>${f.empresa || ''}</td>
+      <td class="numero">${f.promesa_monto != null ? formateadorMoneda.format(f.promesa_monto) : '—'}</td>
+      <td>${f.promesa_fecha_pago || '—'}</td><td>${f.promesa_fecha_vencimiento || '—'}</td><td>${f.telefono || ''}</td>
+    </tr>`).join('');
+
+  const porAgente = {};
+  ultimasFilasPV.forEach(f => { porAgente[f.usuario] = (porAgente[f.usuario] || 0) + 1; });
+  const etiquetas = Object.keys(porAgente);
+  destruirSiExiste('grafico-pv');
+  graficos['grafico-pv'] = new Chart(document.getElementById('grafico-pv'), {
+    type: 'bar',
+    data: { labels: etiquetas, datasets: [{ label: 'Promesas vigentes', data: etiquetas.map(e => porAgente[e]), backgroundColor: COLOR_BRONCE }] },
+    options: { responsive: true, plugins: { legend: { display: false } } },
+  });
+}
+
+document.getElementById('btn-descargar-pv').addEventListener('click', () => {
+  if (!ultimasFilasPV.length) { alert('No hay datos para descargar.'); return; }
+  descargarComoCsv('Promesas_Vigentes.csv',
+    ['dni_cliente', 'nombre_cliente', 'usuario', 'empresa', 'promesa_monto', 'promesa_fecha_pago', 'promesa_fecha_vencimiento', 'telefono'],
+    ultimasFilasPV);
+});
+
+// ============================================================
+// CONVENIOS
+// ============================================================
+let ultimasFilasConv = [];
+document.getElementById('conv-unidad-negocio').addEventListener('change', cargarConvenios);
+document.querySelector('[data-vista="convenios"]').addEventListener('click', () => {
+  if (document.getElementById('conv-unidad-negocio').value) cargarConvenios();
+});
+
+async function cargarConvenios() {
+  const unidad = document.getElementById('conv-unidad-negocio').value;
+  if (!unidad) return;
+  const data = await llamarRpcPaginado('convenios_detectados_lista', { p_unidad_negocio: unidad, fecha_desde: null, fecha_hasta: null });
+  ultimasFilasConv = data || [];
+
+  document.getElementById('conv-kpis').innerHTML = `
+    <div class="tarjeta-kpi"><span class="valor">${formateadorNumero.format(ultimasFilasConv.length)}</span><span class="etiqueta">Convenios detectados</span></div>`;
+
+  document.querySelector('#tabla-conv tbody').innerHTML = ultimasFilasConv.map(f => `
+    <tr>
+      <td>${f.dni_cliente}</td><td>${f.nombre_cliente || ''}</td><td>${f.usuario}</td><td>${f.fecha}</td>
+      <td>${f.frase_detectada}</td><td>${(f.observaciones || '').slice(0, 120)}</td>
+    </tr>`).join('');
+
+  const porAgente = {};
+  ultimasFilasConv.forEach(f => { porAgente[f.usuario] = (porAgente[f.usuario] || 0) + 1; });
+  const etiquetas = Object.keys(porAgente);
+  destruirSiExiste('grafico-conv');
+  graficos['grafico-conv'] = new Chart(document.getElementById('grafico-conv'), {
+    type: 'bar',
+    data: { labels: etiquetas, datasets: [{ label: 'Convenios detectados', data: etiquetas.map(e => porAgente[e]), backgroundColor: COLOR_VERDE }] },
+    options: { responsive: true, plugins: { legend: { display: false } } },
+  });
+}
+
+document.getElementById('btn-descargar-conv').addEventListener('click', () => {
+  if (!ultimasFilasConv.length) { alert('No hay datos para descargar.'); return; }
+  descargarComoCsv('Convenios_Detectados.csv',
+    ['dni_cliente', 'nombre_cliente', 'usuario', 'fecha', 'frase_detectada', 'observaciones'],
+    ultimasFilasConv);
+});
+
+// ============================================================
+// NO CONTACTADOS
+// ============================================================
+let ultimasFilasNC = [];
+document.getElementById('nc-unidad-negocio').addEventListener('change', cargarNoContactados);
+document.querySelector('[data-vista="no-contactados"]').addEventListener('click', () => {
+  if (document.getElementById('nc-unidad-negocio').value) cargarNoContactados();
+});
+
+async function cargarNoContactados() {
+  const unidad = document.getElementById('nc-unidad-negocio').value;
+  if (!unidad) return;
+  const data = await llamarRpcPaginado('cartera_no_contactados_lista', { p_unidad_negocio: unidad, fecha_desde: null, fecha_hasta: null });
+  ultimasFilasNC = data || [];
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+
+  document.getElementById('nc-kpis').innerHTML = `
+    <div class="tarjeta-kpi"><span class="valor">${formateadorNumero.format(ultimasFilasNC.length)}</span><span class="etiqueta">Casos sin contacto logrado</span></div>`;
+
+  document.querySelector('#tabla-nc tbody').innerHTML = ultimasFilasNC.slice(0, 500).map(f => `
+    <tr>
+      <td>${f.nro_documento}</td><td>${(f.nombre_causa || '').trim()}</td>
+      <td class="numero">${formateadorMoneda.format(f.deuda_total || 0)}</td>
+      <td>${f.box || ''}</td><td>${f.provincia || ''}</td>
+      <td class="numero">${f.intentos}</td><td>${f.ultimo_intento || ''}</td><td>${f.ultimo_telefono || ''}</td>
+    </tr>`).join('');
+}
+
+document.getElementById('btn-descargar-nc').addEventListener('click', () => {
+  if (!ultimasFilasNC.length) { alert('No hay datos para descargar.'); return; }
+  descargarComoCsv('No_Contactados_para_enriquecer.csv',
+    ['nro_documento', 'nombre_causa', 'deuda_total', 'box', 'provincia', 'intentos', 'ultimo_intento', 'ultimo_telefono'],
+    ultimasFilasNC);
+});
+
+// ============================================================
+// SIN GESTION
+// ============================================================
+let ultimasFilasSG = [];
+document.getElementById('sg-unidad-negocio').addEventListener('change', cargarSinGestion);
+document.querySelector('[data-vista="sin-gestion"]').addEventListener('click', () => {
+  if (document.getElementById('sg-unidad-negocio').value) cargarSinGestion();
+});
+
+async function cargarSinGestion() {
+  const unidad = document.getElementById('sg-unidad-negocio').value;
+  if (!unidad) return;
+  const data = await llamarRpcPaginado('cartera_sin_gestion_lista', { p_unidad_negocio: unidad, fecha_desde: null, fecha_hasta: null });
+  ultimasFilasSG = data || [];
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+
+  document.getElementById('sg-kpis').innerHTML = `
+    <div class="tarjeta-kpi"><span class="valor">${formateadorNumero.format(ultimasFilasSG.length)}</span><span class="etiqueta">DNI nunca tocados este período</span></div>`;
+
+  document.querySelector('#tabla-sg tbody').innerHTML = ultimasFilasSG.slice(0, 500).map(f => `
+    <tr>
+      <td>${f.nro_documento}</td><td>${(f.nombre_causa || '').trim()}</td>
+      <td class="numero">${formateadorMoneda.format(f.deuda_total || 0)}</td>
+      <td>${f.box || ''}</td><td>${f.provincia || ''}</td>
+    </tr>`).join('');
+}
+
+document.getElementById('btn-descargar-sg').addEventListener('click', () => {
+  if (!ultimasFilasSG.length) { alert('No hay datos para descargar.'); return; }
+  descargarComoCsv('Sin_Gestion.csv',
+    ['nro_documento', 'nombre_causa', 'deuda_total', 'box', 'provincia'],
+    ultimasFilasSG);
+});
+
+// ============================================================
+// CARGAR MASIVOS
+// ============================================================
+document.getElementById('form-cargar-masivos').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const estadoEl = document.getElementById('masivos-estado');
+  const boton = document.getElementById('btn-cargar-masivos');
+  estadoEl.textContent = 'Subiendo…';
+  estadoEl.className = 'mensaje-estado';
+  boton.disabled = true;
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const formData = new FormData();
+  formData.append('archivo', document.getElementById('archivo-masivos').files[0]);
+  formData.append('unidad_negocio', document.getElementById('masivos-unidad-negocio').value);
+  formData.append('canal', document.getElementById('masivos-canal').value);
+
+  try {
+    const respuesta = await fetch(`${CONFIG.BACKEND_URL}/upload-masivos`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenSesion(session)}` },
+      body: formData,
+    });
+    const resultado = await respuesta.json();
+    if (!respuesta.ok) throw new Error(resultado.detail || 'Error desconocido');
+
+    estadoEl.textContent = 'Procesando… esta pantalla se va a actualizar sola cuando termine.';
+    estadoEl.className = 'mensaje-estado ok';
+    const horaInicio = new Date().toISOString();
+    esperarFinalizacionYRefrescar(estadoEl, horaInicio, 'Listo — los envíos ya están cargados.');
+  } catch (err) {
+    estadoEl.textContent = `Error: ${err.message}`;
+    estadoEl.className = 'mensaje-estado error';
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ============================================================
+// COMPARATIVO (mensual y diario) — basado en Gestiones y Recupero
+// ============================================================
+document.getElementById('comp-unidad-negocio').addEventListener('change', cargarComparativo);
+document.querySelector('[data-vista="comparativo"]').addEventListener('click', cargarComparativo);
+document.getElementById('comp-mismo-dia-fecha').addEventListener('change', cargarMismoDia);
+
+async function cargarMismoDia() {
+  const unidad = document.getElementById('comp-unidad-negocio').value || null;
+  const inputFecha = document.getElementById('comp-mismo-dia-fecha');
+  if (!inputFecha.value) {
+    // Por defecto: el ultimo dia con pagos cargados (o hoy si no se puede leer)
+    let porDefecto = new Date().toISOString().slice(0, 10);
+    try {
+      const { data } = await supabaseClient.from('recupero').select('f_pago').order('f_pago', { ascending: false }).limit(1);
+      if (data && data[0] && data[0].f_pago) porDefecto = data[0].f_pago;
+    } catch (e) { /* se usa hoy */ }
+    inputFecha.value = porDefecto;
+  }
+  const fecha = inputFecha.value;
+  const { data } = await supabaseClient.rpc('comparativo_mismo_dia', { p_unidad_negocio: unidad, p_fecha: fecha, meses: 6 });
+  const filas = data || [];
+  const moneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  const etiqueta = f => new Date(f.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dia = Number(fecha.slice(8, 10));
+  const hayAjuste = filas.some(f => Number(f.fecha.slice(8, 10)) !== dia);
+  document.getElementById('comp-mismo-dia-nota').textContent =
+    'Barras: lo recaudado ese día. Línea: acumulado del mes hasta ese día.' +
+    (hayAjuste ? ' En los meses que no tienen ese día se usa el último día del mes.' : '');
+  destruirSiExiste('grafico-comp-mismo-dia');
+  graficos['grafico-comp-mismo-dia'] = new Chart(document.getElementById('grafico-comp-mismo-dia'), {
     data: {
-      labels: etiquetas,
-      datasets: series.map(s => ({
-        label: s.etiqueta, data: s.datos, borderColor: s.color, backgroundColor: s.color + '22',
-        tension: 0.25, fill: series.length === 1, pointRadius: 2,
-      })),
-    },
-    options: { responsive: true, plugins: { legend: { display: series.length > 1 } } },
-  });
-}
-
-// Gráfico combinado: montos en $ (línea, eje izquierdo) + cantidad de fichas
-// (barras, eje derecho) — para mostrar cuántas causas componen cada monto.
-function dibujarLineaConFichas(id, etiquetas, lineas, datosFichas) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  const datasets = [
-    ...lineas.map(s => ({
-      type: 'line', label: s.etiqueta, data: s.datos, borderColor: s.color,
-      backgroundColor: s.color + '22', tension: 0.25, fill: lineas.length === 1,
-      pointRadius: 2, yAxisID: 'y',
-    })),
-    {
-      type: 'bar', label: 'Cantidad de fichas', data: datosFichas,
-      backgroundColor: 'rgba(37, 64, 74, 0.18)', yAxisID: 'y1', order: 99,
-    },
-  ];
-  graficos[id] = new Chart(ctx, {
-    type: 'bar',
-    data: { labels: etiquetas, datasets },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: {
-        y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
-        y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
-      },
-    },
-  });
-}
-
-// Gráfico combinado con 2 líneas (judicial/extrajudicial, eje izquierdo en $)
-// y 2 barras (cantidad de fichas judicial/extrajudicial, eje derecho) — para
-// diferenciar completamente ambos circuitos en un mismo gráfico.
-function dibujarSeguimientoJudExtra(id, etiquetas, valorJudicial, valorExtrajudicial, fichasJudicial, fichasExtrajudicial, sufijo) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  const valorTotal = etiquetas.map((_, i) => Number(valorJudicial[i] || 0) + Number(valorExtrajudicial[i] || 0));
-  const fichasTotal = etiquetas.map((_, i) => Number(fichasJudicial[i] || 0) + Number(fichasExtrajudicial[i] || 0));
-  const datasets = [
-    {
-      type: 'line', label: 'Total' + (sufijo || ''), data: valorTotal, borderColor: COLOR_BRONCE,
-      backgroundColor: COLOR_BRONCE + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y', borderWidth: 2.5,
-    },
-    {
-      type: 'line', label: 'Judicial' + (sufijo || ''), data: valorJudicial, borderColor: COLOR_JUDICIAL,
-      backgroundColor: COLOR_JUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
-    },
-    {
-      type: 'line', label: 'Extrajudicial' + (sufijo || ''), data: valorExtrajudicial, borderColor: COLOR_EXTRAJUDICIAL,
-      backgroundColor: COLOR_EXTRAJUDICIAL + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
-    },
-    {
-      type: 'bar', label: 'Fichas total', data: fichasTotal,
-      backgroundColor: COLOR_BRONCE + '33', yAxisID: 'y1', order: 98,
-    },
-    {
-      type: 'bar', label: 'Fichas judicial', data: fichasJudicial,
-      backgroundColor: COLOR_JUDICIAL + '33', yAxisID: 'y1', order: 99,
-    },
-    {
-      type: 'bar', label: 'Fichas extrajudicial', data: fichasExtrajudicial,
-      backgroundColor: COLOR_EXTRAJUDICIAL + '33', yAxisID: 'y1', order: 99,
-    },
-  ];
-  graficos[id] = new Chart(ctx, {
-    type: 'bar',
-    data: { labels: etiquetas, datasets },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: {
-        x: { ticks: { autoSkip: true, maxTicksLimit: 50, maxRotation: 60, minRotation: 45 } },
-        y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
-        y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
-      },
-    },
-  });
-}
-
-// Versión genérica de dibujarSeguimientoJudExtra: en vez de 2 series fijas
-// (judicial/extrajudicial), recibe un array de líneas y un array de barras
-// — se usa para el desglose por compañía (CFN/Megatone/Confina), que son 3
-// series en vez de 2.
-// lineas / barras: [{ etiqueta, datos, color }]
-function dibujarMultiSeguimiento(id, etiquetas, lineas, barras) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  const datasets = [
-    ...lineas.map(l => ({
-      type: 'line', label: l.etiqueta, data: l.datos, borderColor: l.color,
-      backgroundColor: l.color + '22', tension: 0.25, pointRadius: 2, yAxisID: 'y',
-    })),
-    ...barras.map(b => ({
-      type: 'bar', label: b.etiqueta, data: b.datos, backgroundColor: b.color + '33', yAxisID: 'y1', order: 99,
-    })),
-  ];
-  graficos[id] = new Chart(ctx, {
-    type: 'bar',
-    data: { labels: etiquetas, datasets },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: {
-        x: { ticks: { autoSkip: true, maxTicksLimit: 50, maxRotation: 60, minRotation: 45 } },
-        y: { position: 'left', title: { display: true, text: 'Monto ($)' } },
-        y1: { position: 'right', title: { display: true, text: 'Cantidad de fichas' }, grid: { drawOnChartArea: false } },
-      },
-    },
-  });
-}
-
-// Gráfico de las 3 métricas de Pasos Procesales (cédulas de sentencia,
-// liquidaciones, embargos) por mes — todas son "cantidad de fichas", así que
-// van en un solo eje, sin necesitar el doble eje que sí usan los de Recupero.
-function dibujarPasosPorMes(id, etiquetas, sentencia, liquidacion, embargo) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  graficos[id] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: etiquetas,
+      labels: filas.map(etiqueta),
       datasets: [
-        { label: 'Cédulas de sentencia', data: sentencia, borderColor: COLOR_TINTA, backgroundColor: COLOR_TINTA + '22', tension: 0.25, pointRadius: 2 },
-        { label: 'Liquidaciones', data: liquidacion, borderColor: COLOR_VERDE, backgroundColor: COLOR_VERDE + '22', tension: 0.25, pointRadius: 2 },
-        { label: 'Embargos', data: embargo, borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE + '22', tension: 0.25, pointRadius: 2 },
+        { type: 'bar', label: 'Recaudación del día', data: filas.map(f => Number(f.recaudacion_dia)), backgroundColor: COLOR_VERDE },
+        { type: 'line', label: 'Acumulado del mes hasta ese día', data: filas.map(f => Number(f.recaudacion_acumulada)), borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE, tension: 0.3 },
       ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
-      scales: { y: { title: { display: true, text: 'Cantidad de fichas' } } },
+      plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${moneda.format(c.parsed.y)}` } } },
+      scales: { y: { ticks: { callback: v => moneda.format(v) } } },
     },
   });
 }
 
-function dibujarBarras(id, etiquetas, datos, color, extra) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  const datasets = [{ label: 'Valor', data: datos, backgroundColor: color }];
-  if (extra) datasets.push({ label: extra.etiqueta2, data: extra.datos2, backgroundColor: extra.color2 });
-  graficos[id] = new Chart(ctx, {
-    type: 'bar',
-    data: { labels: etiquetas, datasets },
-    options: { responsive: true, plugins: { legend: { display: !!extra } } },
+async function cargarComparativo() {
+  const unidad = document.getElementById('comp-unidad-negocio').value || null;
+  const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  const formateadorMes = f => new Date(f + 'T00:00:00').toLocaleDateString('es-AR', { month: 'short', year: 'numeric' });
+
+  cargarMismoDia();
+  supabaseClient.rpc('recaudacion_judicial_por_empresa', { meses: 6 }).then(({ data }) => {
+    const nombre = c => c === 'CFN S.R.L.' ? 'CFN' : (String(c).startsWith('ELECTRONICA MEGATONE') ? 'Megatone (On City)' : c);
+    const filas = data || [];
+    const m = formateadorMoneda;
+    document.querySelector('#tabla-recaudacion-empresa tbody').innerHTML = filas.map(f => `
+      <tr>
+        <td>${formateadorMes(f.mes)}</td>
+        <td>${nombre(f.compania)}</td>
+        <td class="numero">${formateadorNumero.format(f.filas)}</td>
+        <td class="numero">${m.format(f.monto_judicial)}</td>
+        <td class="numero">${m.format(f.monto_gerenciar_recupera)}</td>
+        <td class="numero">${m.format(f.monto_sin_unidad)}</td>
+        <td class="numero"><strong>${m.format(f.monto_total)}</strong></td>
+      </tr>`).join('');
   });
-}
+  const [{ data: mensual }, { data: diario }] = await Promise.all([
+    supabaseClient.rpc('comparativo_mensual', { p_unidad_negocio: unidad, meses: 6 }),
+    supabaseClient.rpc('comparativo_diario', { p_unidad_negocio: unidad, fecha_desde: null, fecha_hasta: null }),
+  ]);
 
-// Genera una paleta de colores distinguibles para tortas con muchas
-// porciones (hasta 25 estudios).
-function generarPaletaColores(cantidad) {
-  const colores = [];
-  for (let i = 0; i < Math.max(cantidad, 1); i++) {
-    colores.push(`hsl(${Math.round((360 / Math.max(cantidad, 1)) * i)}, 55%, 45%)`);
-  }
-  return colores;
-}
+  const filasMes = mensual || [];
+  document.querySelector('#tabla-comp-mensual tbody').innerHTML = filasMes.map(f => `
+    <tr>
+      <td>${formateadorMes(f.mes)}</td>
+      <td class="numero">${formateadorNumero.format(f.total_gestiones)}</td>
+      <td class="numero">${formateadorNumero.format(f.dni_trabajados)}</td>
+      <td class="numero">${formateadorNumero.format(f.contacto_directo)}</td>
+      <td class="numero">${formateadorPorcentaje.format(f.pct_efectividad)}</td>
+      <td class="numero">${formateadorMoneda.format(f.recaudacion)}</td>
+    </tr>`).join('');
 
-// Torta "Recupero del último mes cerrado" — por estudio (25 porciones) o
-// por empresa (3 porciones: CFN/Megatone/Confina), con checkbox para elegir
-// Total / Judicial / Extrajudicial.
-async function cargarTortaEstudios() {
-  const modo = document.getElementById('torta-estudios-modo').value;
-  const tipoElegido = document.querySelector('#torta-estudios-tipos input:checked')?.value || 'combinado';
-
-  const { data: mesesData } = await supabaseClient.from('matriz_mensual').select('mes').order('mes', { ascending: false }).limit(1);
-  const ultimoMes = mesesData && mesesData.length ? mesesData[0].mes : null;
-  if (!ultimoMes) { dibujarTorta('grafico-barras-estudios', [], [], []); return; }
-
-  if (modo === 'estudio') {
-    if (tipoElegido === 'combinado') {
-      const { data: filas } = await supabaseClient.from('base_gral').select('valor, estudios(nombre)').eq('parametro', 'RECUPERO ULT.MES CERRADO');
-      const filtradas = (filas || []).filter(f => Number(f.valor) > 0).sort((a, b) => b.valor - a.valor);
-      dibujarTorta('grafico-barras-estudios', filtradas.map(f => f.estudios.nombre), filtradas.map(f => Number(f.valor)), generarPaletaColores(filtradas.length));
-    } else {
-      const parametro = tipoElegido === 'JUDICIAL' ? 'RECUPERO JUDICIAL' : 'RECUPERO EXTRA';
-      const { data: filas } = await supabaseClient.from('matriz_mensual').select('valor, estudios(nombre)').eq('parametro', parametro).eq('mes', ultimoMes);
-      const filtradas = (filas || []).filter(f => Number(f.valor) > 0).sort((a, b) => b.valor - a.valor);
-      dibujarTorta('grafico-barras-estudios', filtradas.map(f => f.estudios.nombre), filtradas.map(f => Number(f.valor)), generarPaletaColores(filtradas.length));
-    }
-  } else {
-    const parametros = tipoElegido === 'combinado'
-      ? ['RECUPERO CFN', 'RECUPERO EM', 'RECUPERO CONFINA']
-      : tipoElegido === 'JUDICIAL'
-        ? ['RECUPERO CFN JUD.', 'RECUPERO EM JUD.', 'RECUPERO CONFINA JUD.']
-        : ['RECUPERO CFN EXT.', 'RECUPERO EM EXT.', 'RECUPERO CONFINA EXT.'];
-    const { data: filas } = await supabaseClient.from('matriz_mensual').select('parametro, valor').in('parametro', parametros).eq('mes', ultimoMes);
-    const sumas = {};
-    (filas || []).forEach(f => { sumas[f.parametro] = (sumas[f.parametro] || 0) + Number(f.valor); });
-    const nombres = ['CFN', 'Electrónica Megatone', 'Confina'];
-    dibujarTorta('grafico-barras-estudios', nombres, parametros.map(p => sumas[p] || 0), [COLOR_CFN, COLOR_EM, COLOR_CONFINA]);
-  }
-}
-
-document.getElementById('torta-estudios-modo').addEventListener('change', cargarTortaEstudios);
-document.querySelectorAll('#torta-estudios-tipos input').forEach(cb => {
-  cb.addEventListener('change', (e) => {
-    if (e.target.checked) {
-      document.querySelectorAll('#torta-estudios-tipos input').forEach(otro => { if (otro !== e.target) otro.checked = false; });
-    } else {
-      e.target.checked = true; // siempre tiene que quedar uno tildado
-    }
-    cargarTortaEstudios();
+  destruirSiExiste('grafico-comp-mensual');
+  graficos['grafico-comp-mensual'] = new Chart(document.getElementById('grafico-comp-mensual'), {
+    data: {
+      labels: filasMes.map(f => formateadorMes(f.mes)),
+      datasets: [
+        { type: 'bar', label: 'Total Gestiones', data: filasMes.map(f => f.total_gestiones), backgroundColor: COLOR_TINTA, yAxisID: 'y' },
+        { type: 'bar', label: 'Contacto Directo', data: filasMes.map(f => f.contacto_directo), backgroundColor: COLOR_BRONCE, yAxisID: 'y' },
+        { type: 'line', label: 'Recaudación', data: filasMes.map(f => f.recaudacion), borderColor: COLOR_VERDE, backgroundColor: COLOR_VERDE, yAxisID: 'y1', tension: 0.3 },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'Gestiones' } },
+        y1: { position: 'right', title: { display: true, text: 'Recaudación ($)' }, grid: { drawOnChartArea: false } },
+      },
+    },
   });
-});
 
-function dibujarTorta(id, etiquetas, datos, colores) {
-  destruirSiExiste(id);
-  const ctx = document.getElementById(id);
-  graficos[id] = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels: etiquetas, datasets: [{ data: datos, backgroundColor: colores }] },
+  const filasDia = diario || [];
+  destruirSiExiste('grafico-comp-diario');
+  graficos['grafico-comp-diario'] = new Chart(document.getElementById('grafico-comp-diario'), {
+    type: 'line',
+    data: {
+      labels: filasDia.map(f => f.fecha),
+      datasets: [
+        { label: 'Total Gestiones', data: filasDia.map(f => f.total_gestiones), borderColor: COLOR_TINTA, tension: 0.3 },
+        { label: 'Contacto Directo', data: filasDia.map(f => f.contacto_directo), borderColor: COLOR_BRONCE, tension: 0.3 },
+      ],
+    },
     options: { responsive: true },
   });
 }
 
-// ============================================================
-// EXPORTAR INFORME COMPLETO A PDF
-// ============================================================
 
-// Dibuja un gráfico "fuera de pantalla" (no se ve en la página) solo para
-// capturarlo como imagen y meterlo en el PDF. Se destruye apenas se usa.
-async function renderizarGraficoParaPDF(tipo, etiquetas, datasets) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 900;
-  canvas.height = 380;
-  const chart = new Chart(canvas, {
-    type: tipo,
-    data: {
-      labels: etiquetas,
-      datasets: datasets.map(d => ({ tension: 0.25, pointRadius: 0, borderWidth: 2, ...d })),
-    },
-    options: { responsive: false, animation: false, plugins: { legend: { display: datasets.length > 1 } } },
+// ============================================================
+// CIERRE DIARIO — cómo cerró un día cada agente
+// ============================================================
+(function iniciarCierreDiario() {
+  const fecha = document.getElementById('cd-fecha');
+  const mover = dias => {
+    const d = new Date((fecha.value || new Date().toISOString().slice(0, 10)) + 'T00:00:00');
+    d.setDate(d.getDate() + dias);
+    fecha.value = d.toISOString().slice(0, 10);
+    cargarCierreDiario();
+  };
+  document.getElementById('cd-anterior').addEventListener('click', () => mover(-1));
+  document.getElementById('cd-siguiente').addEventListener('click', () => mover(1));
+  document.getElementById('cd-ultimo').addEventListener('click', async () => { await fijarUltimoDiaCargado(); cargarCierreDiario(); });
+  fecha.addEventListener('change', cargarCierreDiario);
+  document.getElementById('cd-unidad-negocio').addEventListener('change', cargarCierreDiario);
+  document.getElementById('cd-descargar').addEventListener('click', () => {
+    const cols = ['usuario', 'empresa', 'gestiones', 'dni_trabajados', 'contacto_directo', 'contacto_indirecto', 'sin_contacto', 'pct_efectividad', 'pagos', 'recupero_atribuido'];
+    descargarComoCsv(`cierre_diario_${fecha.value}.csv`, cols, window._cierreDiarioFilas || []);
   });
-  await new Promise(r => setTimeout(r, 60));
-  const imagen = canvas.toDataURL('image/png');
-  chart.destroy();
-  return imagen;
+  document.querySelector('[data-vista="cierre-diario"]').addEventListener('click', async () => {
+    if (!fecha.value) await fijarUltimoDiaCargado();
+    cargarCierreDiario();
+  });
+})();
+
+async function fijarUltimoDiaCargado() {
+  const { data } = await supabaseClient.from('gestiones').select('fecha').order('fecha', { ascending: false }).limit(1);
+  document.getElementById('cd-fecha').value = (data && data[0] && data[0].fecha) || new Date().toISOString().slice(0, 10);
 }
 
-document.getElementById('btn-exportar-pdf').addEventListener('click', async () => {
-  const boton = document.getElementById('btn-exportar-pdf');
-  boton.disabled = true;
-  const textoOriginal = boton.textContent;
-  boton.textContent = 'Generando PDF… puede tardar un minuto';
+async function cargarCierreDiario() {
+  const fecha = document.getElementById('cd-fecha').value;
+  if (!fecha) return;
+  const unidad = document.getElementById('cd-unidad-negocio').value || null;
+  const { data } = await supabaseClient.rpc('cierre_diario', { p_fecha: fecha, p_unidad_negocio: unidad, p_empresa: null });
+  const filas = data || [];
+  window._cierreDiarioFilas = filas;
+  const moneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  const pct = v => `${(Number(v) * 100).toFixed(1).replace('.', ',')}%`;
+  const suma = k => filas.reduce((a, f) => a + Number(f[k] || 0), 0);
+  const tot = { g: suma('gestiones'), d: suma('dni_trabajados'), cd: suma('contacto_directo'), ci: suma('contacto_indirecto'),
+                sc: suma('sin_contacto'), p: suma('pagos'), m: suma('recupero_atribuido') };
 
-  try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const anchoPagina = doc.internal.pageSize.getWidth();
-    const margen = 40;
-    const anchoUtil = anchoPagina - margen * 2;
+  const diaTxt = new Date(fecha + 'T00:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+  document.getElementById('cd-titulo').textContent = `Detalle por agente — ${diaTxt}${unidad ? ` · ${unidad}` : ''}`;
+  document.getElementById('cd-kpis').innerHTML = [
+    ['Agentes activos', formateadorNumero.format(filas.length)],
+    ['Gestiones', formateadorNumero.format(tot.g)],
+    ['DNI trabajados', formateadorNumero.format(tot.d)],
+    ['Contacto directo', `${formateadorNumero.format(tot.cd)} (${pct(tot.d ? tot.cd / tot.d : 0)})`],
+    ['Pagos atribuidos', formateadorNumero.format(tot.p)],
+    ['Recupero atribuido', moneda.format(tot.m)],
+  ].map(([t, v]) => `<div class="tarjeta-kpi"><span class="valor">${v}</span><span class="etiqueta">${t}</span></div>`).join('');
 
-    // ---- Traer todos los datos necesarios ----
-    const { data: estudios } = await supabaseClient.from('estudios').select('id, nombre').order('nombre');
-    const base = await consultarPaginado(() => supabaseClient.from('base_gral').select('parametro, valor, estudios(nombre)'));
-    const matrizCompleta = await consultarPaginado(() => supabaseClient.from('matriz_mensual').select('mes, parametro, valor, estudio_id'));
+  const fila = f => `<tr><td>${f.usuario}</td><td>${f.empresa || ''}</td>
+    <td class="numero">${formateadorNumero.format(f.gestiones)}</td><td class="numero">${formateadorNumero.format(f.dni_trabajados)}</td>
+    <td class="numero">${formateadorNumero.format(f.contacto_directo)}</td><td class="numero">${formateadorNumero.format(f.contacto_indirecto)}</td>
+    <td class="numero">${formateadorNumero.format(f.sin_contacto)}</td><td class="numero">${pct(f.pct_efectividad)}</td>
+    <td class="numero">${formateadorNumero.format(f.pagos)}</td><td class="numero">${moneda.format(f.recupero_atribuido)}</td></tr>`;
+  document.querySelector('#tabla-cierre-diario tbody').innerHTML = filas.length
+    ? filas.map(fila).join('') + `<tr style="font-weight:600"><td>TOTAL</td><td></td>
+        <td class="numero">${formateadorNumero.format(tot.g)}</td><td class="numero">${formateadorNumero.format(tot.d)}</td>
+        <td class="numero">${formateadorNumero.format(tot.cd)}</td><td class="numero">${formateadorNumero.format(tot.ci)}</td>
+        <td class="numero">${formateadorNumero.format(tot.sc)}</td><td class="numero">${pct(tot.d ? tot.cd / tot.d : 0)}</td>
+        <td class="numero">${formateadorNumero.format(tot.p)}</td><td class="numero">${moneda.format(tot.m)}</td></tr>`
+    : '<tr><td colspan="10">No hay gestiones cargadas para ese día.</td></tr>';
+  document.getElementById('cd-nota').textContent = 'Los pagos aparecen cuando se carga el Recupero de ese día; si todavía no se cargó, la columna figura en cero.';
+}
 
-    const suma = (param) => base.filter(f => f.parametro === param).reduce((a, f) => a + Number(f.valor), 0);
-
-    // ---- Página 1: Resumen General ----
-    doc.setFontSize(18);
-    doc.text('Matriz de Recupero — Informe General', margen, 50);
-    doc.setFontSize(9);
-    doc.setTextColor(120);
-    doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, margen, 66);
-    doc.setTextColor(0);
-
-    doc.setFontSize(11);
-    let y = 95;
-    [
-      ['Recupero últ. mes (nacional)', formateadorMoneda.format(suma('RECUPERO ULT.MES CERRADO'))],
-      ['Causas en gestión', formateadorNumero.format(suma('EN GESTIÓN'))],
-      ['Causas iniciadas', formateadorNumero.format(suma('INICIADAS'))],
-      ['Con embargo', formateadorNumero.format(suma('CON EMBARGO HABERES'))],
-    ].forEach(([etq, val]) => { doc.text(`${etq}: ${val}`, margen, y); y += 16; });
-
-    const porMesNacional = {};
-    matrizCompleta.filter(f => f.parametro === 'RECUPERO').forEach(f => {
-      porMesNacional[f.mes] = (porMesNacional[f.mes] || 0) + Number(f.valor);
-    });
-    const mesesNacional = Object.keys(porMesNacional).sort();
-    if (mesesNacional.length) {
-      const imgNacional = await renderizarGraficoParaPDF('line', mesesNacional, [
-        { label: 'Recupero total', data: mesesNacional.map(m => porMesNacional[m]), borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE + '22', fill: true },
-      ]);
-      doc.addImage(imgNacional, 'PNG', margen, y + 8, anchoUtil, 200);
-      y += 220;
-    }
-
-    const porEstudioBase = {};
-    base.forEach(f => {
-      const nombre = f.estudios.nombre;
-      porEstudioBase[nombre] = porEstudioBase[nombre] || {};
-      porEstudioBase[nombre][f.parametro] = Number(f.valor);
-    });
-    const filasTabla = Object.entries(porEstudioBase)
-      .sort((a, b) => (b[1]['RECUPERO ULT.MES CERRADO'] || 0) - (a[1]['RECUPERO ULT.MES CERRADO'] || 0))
-      .map(([nombre, v]) => [
-        nombre,
-        formateadorMoneda.format(v['RECUPERO ULT.MES CERRADO'] || 0),
-        formateadorNumero.format(v['EN GESTIÓN'] || 0),
-        formateadorNumero.format(v['INICIADAS'] || 0),
-        formateadorNumero.format(v['CON EMBARGO HABERES'] || 0),
-      ]);
-    doc.autoTable({
-      startY: y,
-      head: [['Estudio', 'Recupero últ. mes', 'En gestión', 'Iniciadas', 'Con embargo']],
-      body: filasTabla,
-      margin: { left: margen, right: margen },
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [37, 64, 74] },
-    });
-
-    // ---- Una página por estudio ----
-    for (const est of estudios) {
-      doc.addPage();
-      const filasEst = matrizCompleta.filter(f => f.estudio_id === est.id);
-      const mesesEst = [...new Set(filasEst.map(f => f.mes))].sort();
-      const porParam = (p) => mesesEst.map(m => Number((filasEst.find(f => f.mes === m && f.parametro === p) || {}).valor || 0));
-
-      doc.setFontSize(16);
-      doc.text(est.nombre, margen, 50);
-
-      let yEst = 75;
-      if (mesesEst.length) {
-        const imgEstudio = await renderizarGraficoParaPDF('line', mesesEst, [
-          { label: 'Total', data: porParam('RECUPERO'), borderColor: COLOR_BRONCE },
-          { label: 'Judicial', data: porParam('RECUPERO JUDICIAL'), borderColor: COLOR_TINTA },
-          { label: 'Extrajudicial', data: porParam('RECUPERO EXTRA'), borderColor: COLOR_VERDE },
-        ]);
-        doc.addImage(imgEstudio, 'PNG', margen, yEst, anchoUtil, 190);
-        yEst += 205;
-      } else {
-        doc.setFontSize(10);
-        doc.text('Sin datos mensuales cargados para este estudio.', margen, yEst);
-        yEst += 20;
-      }
-
-      const datosBase = porEstudioBase[est.nombre] || {};
-      doc.setFontSize(10);
-      [
-        ['En gestión', datosBase['EN GESTIÓN']], ['Iniciadas', datosBase['INICIADAS']],
-        ['Con embargo', datosBase['CON EMBARGO HABERES']], ['Contraparte', datosBase['CONTRAPARTE']],
-        ['5 años sin pagos', datosBase['5 AÑOS SIN PAGOS']],
-      ].forEach(([etq, val]) => {
-        doc.text(`${etq}: ${formateadorNumero.format(val || 0)}`, margen, yEst);
-        yEst += 15;
-      });
-    }
-
-    doc.save(`matriz-recupero-${new Date().toISOString().slice(0, 10)}.pdf`);
-  } catch (err) {
-    console.error(err);
-    alert('Error generando el PDF: ' + err.message);
-  } finally {
-    boton.disabled = false;
-    boton.textContent = textoOriginal;
+// ============================================================
+// RECUPERO DIARIO — casos cobrados y monto, mismo dia de cada mes
+// ============================================================
+(function iniciarRecuperoDiario() {
+  const selDia = document.getElementById('rd-dia');
+  for (let d = 1; d <= 31; d++) {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = `Día ${d}`;
+    selDia.appendChild(opt);
   }
-});
+  selDia.value = String(new Date().getDate());
+  ['rd-unidad-negocio', 'rd-dia', 'rd-meses', 'rd-modo'].forEach(id =>
+    document.getElementById(id).addEventListener('change', cargarRecuperoDiario));
+  document.querySelector('[data-vista="recupero-diario"]').addEventListener('click', cargarRecuperoDiario);
+})();
 
-// Los gráficos dentro de un <details> pueden quedar mal dimensionados si se
-// dibujaron mientras estaba cerrado — al reabrir, le pedimos a Chart.js que
-// vuelva a calcular el tamaño.
-document.querySelectorAll('details.desplegable').forEach(detalle => {
-  detalle.addEventListener('toggle', () => {
-    if (!detalle.open) return;
-    const canvas = detalle.querySelector('canvas');
-    if (canvas && graficos[canvas.id]) graficos[canvas.id].resize();
+async function cargarRecuperoDiario() {
+  const unidad = document.getElementById('rd-unidad-negocio').value || null;
+  const dia = Number(document.getElementById('rd-dia').value);
+  const meses = Number(document.getElementById('rd-meses').value);
+  const acumulado = document.getElementById('rd-modo').value === 'acumulado';
+  const { data } = await supabaseClient.rpc('recupero_diario_comparado', {
+    p_unidad_negocio: unidad, p_dia: dia, meses, p_acumulado: acumulado,
   });
-});
+  const filas = data || [];
+  const moneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+  const fmtMes = f => new Date(f + 'T00:00:00').toLocaleDateString('es-AR', { month: 'short', year: 'numeric' });
+  const fmtDia = f => new Date(f + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  const periodo = f => f.desde === f.hasta ? fmtDia(f.hasta) : `${fmtDia(f.desde)} al ${fmtDia(f.hasta)}`;
 
-iniciarApp();
+  document.getElementById('rd-titulo').textContent =
+    `Casos cobrados y monto — ${acumulado ? `del 1 al ${dia}` : `solo el día ${dia}`} de cada mes${unidad ? ` · ${unidad}` : ''}`;
+
+  document.querySelector('#tabla-recupero-diario tbody').innerHTML = filas.map(f => `
+    <tr><td>${fmtMes(f.mes)}</td><td>${periodo(f)}</td>
+    <td class="numero">${formateadorNumero.format(f.casos)}</td>
+    <td class="numero">${moneda.format(f.monto)}</td></tr>`).join('');
+
+  destruirSiExiste('grafico-recupero-diario');
+  graficos['grafico-recupero-diario'] = new Chart(document.getElementById('grafico-recupero-diario'), {
+    data: {
+      labels: filas.map(f => fmtMes(f.mes)),
+      datasets: [
+        { type: 'bar', label: 'Casos cobrados', data: filas.map(f => Number(f.casos)), backgroundColor: 'rgba(63,107,79,0.35)', yAxisID: 'y1', order: 2 },
+        { type: 'line', label: 'Monto recaudado', data: filas.map(f => Number(f.monto)), borderColor: COLOR_BRONCE, backgroundColor: COLOR_BRONCE, tension: 0.3, yAxisID: 'y', order: 1 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { tooltip: { callbacks: {
+        title: items => { const f = filas[items[0].dataIndex]; return `${fmtMes(f.mes)} (${periodo(f)})`; },
+        label: c => c.dataset.yAxisID === 'y' ? `Monto: ${moneda.format(c.parsed.y)}` : `Casos cobrados: ${formateadorNumero.format(c.parsed.y)}`,
+      } } },
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'Monto ($)' }, ticks: { callback: v => moneda.format(v) } },
+        y1: { position: 'right', title: { display: true, text: 'Casos cobrados' }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
