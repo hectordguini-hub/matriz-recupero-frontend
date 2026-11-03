@@ -3,21 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GERENCIAR S.R.L. — Gestión de Agentes</title>
+<title>GERENCIAR S.R.L. — Matriz de Recupero</title>
+<link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&family=Fira+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <!-- ================= PANTALLA DE LOGIN ================= -->
 <section id="pantalla-login" class="pantalla-login">
-  <img src="logo.png" alt="Gerenciar S.R.L." class="logo-login">
+  <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="logo-login">
   <h1>GERENCIAR S.R.L.</h1>
-  <p class="subtitulo">Gestión de Agentes</p>
+  <p class="subtitulo">Gestión de Cobranza — Matriz de Recupero</p>
 
   <form id="form-login" class="tarjeta-login">
     <label>
@@ -33,6 +36,26 @@
   </form>
 </section>
 
+<!-- ================= CAMBIO DE CONTRASEÑA OBLIGATORIO (primer ingreso) ================= -->
+<section id="pantalla-cambiar-password" class="pantalla-login oculto">
+  <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="logo-login">
+  <h1>Elegí tu contraseña</h1>
+  <p class="subtitulo">Es tu primer ingreso — poné una contraseña nueva para tu cuenta.</p>
+
+  <form id="form-cambiar-password" class="tarjeta-login">
+    <label>
+      Contraseña nueva
+      <input type="password" id="nueva-password" required minlength="6" autocomplete="new-password">
+    </label>
+    <label>
+      Repetir contraseña
+      <input type="password" id="nueva-password-confirmar" required minlength="6" autocomplete="new-password">
+    </label>
+    <button type="submit">Guardar y entrar</button>
+    <p id="cambiar-password-error" class="mensaje-error" role="alert"></p>
+  </form>
+</section>
+
 <!-- ================= APP PRINCIPAL (post-login) ================= -->
 <div id="app" class="app oculto">
 
@@ -40,10 +63,10 @@
     <div class="encabezado-izq">
       <button id="btn-toggle-menu" class="btn-toggle-menu" aria-label="Mostrar/ocultar menú">☰</button>
       <div class="marca">
-        <img src="logo.png" alt="Gerenciar S.R.L." class="marca-logo">
+        <img src="logo-gerenciar.png" alt="Gerenciar S.R.L." class="marca-logo">
         <div>
           <strong>GERENCIAR S.R.L.</strong>
-          <span class="marca-sub">Gestión de Agentes</span>
+          <span class="marca-sub">Matriz de Recupero</span>
         </div>
       </div>
     </div>
@@ -55,587 +78,465 @@
 
   <div class="cuerpo-app">
     <nav class="menu-lateral" id="nav-pestanas">
-      <button class="pestana activa" data-vista="resumen">Resumen</button>
-      <button class="pestana" data-vista="cartera-resumen">Cartera</button>
-      <button class="pestana" data-vista="comparativo">Comparativo</button>
-      <button class="pestana" data-vista="cierre-diario">Cierre diario</button>
-      <button class="pestana" data-vista="recupero-diario">Recupero diario</button>
-
-      <div class="etiqueta-grupo-menu">Operatividad</div>
-      <button class="pestana" data-vista="cargar">Cargar Gestiones</button>
-      <button class="pestana" data-vista="cargar-recupero">Cargar Recupero</button>
-      <button class="pestana" data-vista="cargar-cartera">Cargar Cartera</button>
-      <button class="pestana" data-vista="baja-cartera">Dar de baja Cartera</button>
-
-      <div class="etiqueta-grupo-menu">Seguimiento</div>
-      <button class="pestana" data-vista="promesas-vigentes">Promesas Vigentes</button>
-      <button class="pestana" data-vista="convenios">Convenios</button>
-      <button class="pestana" data-vista="no-contactados">No Contactados</button>
-      <button class="pestana" data-vista="sin-gestion">Sin Gestión</button>
-      <button class="pestana" data-vista="cargar-masivos">Cargar Masivos</button>
-
-      <div class="etiqueta-grupo-menu">Configuración</div>
-      <button class="pestana" data-vista="configuracion">Agentes y Usuarios</button>
+      <button class="pestana activa" data-vista="resumen">Resumen General</button>
+      <button class="pestana" data-vista="empresa">Por Empresa</button>
+      <button class="pestana" data-vista="estudio">Por Estudio</button>
+      <button class="pestana" data-vista="recuperodiario">Recupero Diario</button>
+      <button class="pestana" data-vista="cargar">Carga Completa</button>
+      <button class="pestana" data-vista="incremental">Carga Mensual</button>
     </nav>
 
     <main>
-      <!-- ---------- VISTA: RESUMEN ---------- -->
-      <section id="vista-resumen" class="vista">
-        <div class="fila-encabezado-vista">
-          <h2>Resumen de Gestiones</h2>
-        </div>
+    <!-- ---------- VISTA: RESUMEN GENERAL ---------- -->
+    <section id="vista-resumen" class="vista">
+      <div class="fila-encabezado-vista">
+        <h2>Resumen General</h2>
+      </div>
 
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="selector-unidad-resumen">
-            <option value="">Todas</option>
-          </select>
-          <span class="etiqueta-actualizado">Rango</span>
-          <select id="selector-rango-resumen">
-            <!-- Se llena solo en JS con el mes actual + los 5 anteriores -->
-          </select>
-        </div>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-generales"></div>
 
-        <div class="fila-titulo-selector oculto" id="fila-empresa-resumen">
-          <span class="etiqueta-actualizado">Empresa</span>
-          <select id="selector-empresa-resumen">
-            <option value="">Todas</option>
-            <option value="Crédito Argentino">Crédito Argentino</option>
-            <option value="On City">On City</option>
-          </select>
-        </div>
 
-        <div class="tarjetas-kpi" id="kpis-resumen"></div>
-
-        <!-- ---------- EMBUDO DE EFECTIVIDAD ---------- -->
-        <p id="embudo-mensaje-sin-unidad" class="ayuda">Elegí una unidad de negocio puntual (no "Todas") para ver el embudo de efectividad y la contactabilidad de la cartera.</p>
-        <div id="embudo-contenido" class="oculto">
-          <details class="tabla-contenedor desplegable" open>
-            <summary>Embudo de efectividad (objetivo vs. real)</summary>
-            <table id="tabla-embudo">
-              <thead><tr><th>Etapa</th><th class="numero">Cantidad</th><th class="numero">% Real</th><th class="numero">% Objetivo</th><th class="numero">Desvío</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </details>
-        </div>
-
-        <div class="grilla-graficos">
-          <details class="tarjeta-grafico ancho-completo desplegable" open>
-            <summary>Volumen de gestiones por día</summary>
-            <canvas id="grafico-volumen-dia"></canvas>
-          </details>
-        </div>
-
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle por agente</summary>
-          <table id="tabla-por-agente">
-            <thead>
-              <tr>
-                <th>Agente</th><th>Empresa</th><th>Gestiones</th><th>DNI Trabajados</th>
-                <th>Contacto directo</th><th>Contacto indirecto</th><th>Sin contacto</th>
-                <th>% Efectividad</th>
-                <th>Promesas</th><th>Promesas cumplidas</th><th>% Cumplidas</th>
-                <th>Recupero total</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </details>
-
-        <div class="grilla-graficos">
-          <details class="tarjeta-grafico ancho-completo desplegable" open>
-            <summary>Resultados de gestión (Efecto)</summary>
-            <canvas id="grafico-por-efecto"></canvas>
-          </details>
-        </div>
-
-        <div class="grilla-graficos">
-          <details class="tarjeta-grafico desplegable" open>
-            <summary>Efectividad de contacto (Total)</summary>
-            <canvas id="grafico-efectividad-total"></canvas>
-          </details>
-          <details class="tarjeta-grafico desplegable" open>
-            <summary>Gestiones por canal</summary>
-            <canvas id="grafico-por-canal"></canvas>
-          </details>
-          <details class="tarjeta-grafico desplegable oculto" id="contactabilidad-contenido" open>
-            <summary>Contactabilidad de la Cartera</summary>
-            <canvas id="grafico-contactabilidad"></canvas>
-          </details>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: CARTERA (composicion y resumen) ---------- -->
-      <section id="vista-cartera-resumen" class="vista oculto">
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="cartera-resumen-unidad">
-            <option value="" disabled selected>Elegí una unidad</option>
-          </select>
-          <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; color:var(--texto-tenue);">
-            <input type="checkbox" id="cartera-resumen-incluir-pagos" checked>
-            Incluir fichas con pago vigente
-          </label>
-          <button type="button" id="btn-descargar-cartera" class="btn-secundario">Descargar cartera actual</button>
-        </div>
-        <p id="cartera-descarga-estado" class="mensaje-estado"></p>
-
-        <div class="tarjetas-kpi" id="cartera-resumen-totales"></div>
-
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Composición por BOX</summary>
-          <table id="tabla-cartera-por-box">
-            <thead><tr><th>BOX</th><th class="numero">Créditos/Fichas</th><th class="numero">DNI (sin duplicar)</th><th class="numero">Saldo</th><th class="numero">% s/ créditos</th><th class="numero">% s/ DNI</th><th class="numero">% s/ saldo</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Composición por rango (tramo de mora)</summary>
-          <table id="tabla-cartera-por-rango">
-            <thead><tr><th>Rango</th><th class="numero">Créditos/Fichas</th><th class="numero">DNI (sin duplicar)</th><th class="numero">Saldo</th><th class="numero">% s/ créditos</th><th class="numero">% s/ DNI</th><th class="numero">% s/ saldo</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: CARGAR GESTIONES ---------- -->
-      <section id="vista-cargar" class="vista oculto">
-        <h2>Cargar Gestiones del día</h2>
-        <p class="ayuda">Subí el archivo "Detalle de Gestiones" del día anterior (TSV/CSV). Si volvés a subir un archivo con la misma fecha, se reemplazan esas filas — no se duplican.</p>
-
-        <form id="form-cargar-gestiones" class="tarjeta-carga">
-          <label class="campo-archivo">Archivo de Gestiones <input type="file" id="archivo-gestiones" accept=".tsv,.csv,.txt" required></label>
-          <button type="submit" id="btn-cargar-gestiones">Cargar Gestiones</button>
-          <p id="carga-estado" class="mensaje-estado"></p>
-        </form>
-
-        <div class="tabla-contenedor">
-          <h3>Historial de cargas</h3>
-          <table id="tabla-log">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: CARGAR RECUPERO ---------- -->
-      <section id="vista-cargar-recupero" class="vista oculto">
-        <h2>Cargar Recupero del día</h2>
-        <p class="ayuda">Subí el archivo de Recupero del día anterior (XLSX). Si volvés a subir un archivo con las mismas fechas de pago, se reemplazan esas filas — no se duplican. Después de cargar, el sistema marca automáticamente como "Pago vigente" las fichas de Cartera que tengan un pago este mes.</p>
-
-        <form id="form-cargar-recupero" class="tarjeta-carga">
-          <label class="campo-archivo">
-            Unidad de negocio
-            <select id="recupero-unidad-negocio" required>
-              <option value="JUDICIAL_AUTO" selected>JUDICIAL (Megatone + CFN combinado, automático por Compañía)</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <label class="campo-archivo">Archivo de Recupero <input type="file" id="archivo-recupero" accept=".xlsx" required></label>
-          <button type="submit" id="btn-cargar-recupero">Cargar Recupero</button>
-          <p id="recupero-estado" class="mensaje-estado"></p>
-        </form>
-
-        <div class="tabla-contenedor">
-          <h3>Historial de cargas</h3>
-          <table id="tabla-log-recupero">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: CARGAR CARTERA ---------- -->
-      <section id="vista-cargar-cartera" class="vista oculto">
-        <h2>Cargar Cartera asignada (semanal)</h2>
-        <p class="ayuda">Subí el archivo semanal de Cartera para UNA unidad de negocio a la vez — el archivo solo debe traer las fichas nuevas de esa semana. El sistema asigna el box automáticamente: si el DNI ya tenía ficha en esa unidad, va al mismo box; si es un DNI nuevo, va al box más atrasado según su carga horaria. Para ON CITY JUDICIAL y CFN JUDICIAL, además, cada carga revisa toda la cartera y reasigna a GERENCIAR RECUPERA los casos que ya superaron los 1081 días desde la Fecha Inicio Estudio.</p>
-
-        <form id="form-cargar-cartera" class="tarjeta-carga">
-          <label class="campo-archivo">
-            Unidad de negocio
-            <select id="cartera-unidad-negocio" required>
-              <option value="" disabled selected>Elegí una unidad</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <label class="campo-archivo">Archivo de Cartera (fichas nuevas de la semana) <input type="file" id="archivo-cartera" accept=".xlsx" required></label>
-          <label class="campo-checkbox">
-            <input type="checkbox" id="cartera-solo-actualizar">
-            Solo actualizar fichas que ya existen (no dar de alta nuevas — para completar datos como teléfono/email sin volver a agregar fichas que ya diste de baja)
-          </label>
-          <button type="submit" id="btn-cargar-cartera">Cargar Cartera</button>
-          <p id="cartera-estado" class="mensaje-estado"></p>
-        </form>
-
-        <div class="tabla-contenedor">
-          <h3>Historial de cargas</h3>
-          <table id="tabla-log-cartera">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: DAR DE BAJA CARTERA ---------- -->
-      <section id="vista-baja-cartera" class="vista oculto">
-        <h2>Dar de baja Cartera (mensual, unidades Tercerizadas)</h2>
-        <p class="ayuda">Subí el archivo con los casos que se dan de baja este mes (identificados por Ficha o Punto y Número de crédito) para UNA unidad de negocio. Se eliminan esas fichas de la cartera asignada — el resto sigue igual. Para los casos nuevos del mes, usá la pestaña "Cargar Cartera" como siempre.</p>
-
-        <form id="form-baja-cartera" class="tarjeta-carga">
-          <label class="campo-archivo">
-            Unidad de negocio
-            <select id="baja-unidad-negocio" required>
-              <option value="" disabled selected>Elegí una unidad</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <label class="campo-archivo">Archivo de bajas <input type="file" id="archivo-baja-cartera" accept=".xlsx" required></label>
-          <button type="submit" id="btn-baja-cartera">Dar de baja</button>
-          <p id="baja-cartera-estado" class="mensaje-estado"></p>
-        </form>
-
-        <div class="tabla-contenedor">
-          <h3>Historial de cargas</h3>
-          <table id="tabla-log-baja-cartera">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: COMPARATIVO ---------- -->
-      <section id="vista-comparativo" class="vista oculto">
-        <h2>Comparativo</h2>
-        <p class="ayuda">Basado en Gestiones y Recupero (tienen fecha real y nunca se pisan entre meses) — no incluye métricas de Cartera Asignada, que al actualizarse cada semana no permite comparar el pasado de forma confiable.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="comp-unidad-negocio">
-            <option value="">Todas</option>
-            <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-            <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-            <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-            <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-            <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-          </select>
-        </div>
-
+      <div class="grilla-graficos">
         <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>General — últimos 6 meses</summary>
-          <canvas id="grafico-comp-mensual"></canvas>
+          <summary>Recupero Mensual — Total Nacional</summary>
+          
+          <canvas id="grafico-recupero-nacional"></canvas>
         </details>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle mensual</summary>
-          <table id="tabla-comp-mensual">
-            <thead><tr><th>Mes</th><th class="numero">Total Gestiones</th><th class="numero">DNI Trabajados</th><th class="numero">Contacto Directo</th><th class="numero">% Efectividad</th><th class="numero">Recaudación</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Recaudado por empresa — judicial (CFN / Megatone)</summary>
-          <p class="ayuda">Suma Subtotal empresa + Honorarios + Aportes con Embargo = N. Incluye ON CITY JUDICIAL, CFN JUDICIAL y GERENCIAR RECUPERA (más cualquier pago aún sin unidad asignada), para poder contrastar con la Matriz de Datos. No depende del filtro de unidad.</p>
-          <table id="tabla-recaudacion-empresa">
-            <thead><tr><th>Mes</th><th>Empresa</th><th class="numero">Pagos</th><th class="numero">Unidad judicial</th><th class="numero">Gerenciar Recupera</th><th class="numero">Sin unidad</th><th class="numero">Total</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-
         <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Recaudación — mismo día de cada mes</summary>
+          <summary>Seguimiento Del Recupero — Nacional</summary>
           <div class="fila-titulo-selector">
-            <span class="etiqueta-actualizado">Día</span>
-            <input type="date" id="comp-mismo-dia-fecha">
+            
+            <select id="selector-dia-nacional" class="selector-dia-mes" data-objetivo="nacional">
+              <option value="">Todos los días</option>
+            </select>
+            <select class="selector-rango" data-objetivo="nacional">
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
+            </select>
+            <div class="selector-granularidad" data-objetivo="nacional">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
           </div>
-          <p class="ayuda" id="comp-mismo-dia-nota"></p>
-          <canvas id="grafico-comp-mismo-dia"></canvas>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-nacional">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-nacional"></canvas>
+            </div>
+          </div>
         </details>
-
         <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary>Diario — mes en curso</summary>
-          <canvas id="grafico-comp-diario"></canvas>
+          <summary id="titulo-grafico-recupero-companias">Recupero Mensual — Por Compañía</summary>
+          
+          <canvas id="grafico-recupero-nacional-companias"></canvas>
         </details>
-      </section>
-
-      <!-- ---------- VISTA: CIERRE DIARIO (por agente) ---------- -->
-      <section id="vista-cierre-diario" class="vista oculto">
-        <h2>Cierre diario por agente</h2>
-        <p class="ayuda">Cómo cerró un día puntual cada agente: gestiones, DNI trabajados, contacto, efectividad y pagos atribuidos a su gestión (los pagos del día que corresponden a una gestión efectiva del agente en los 30 días previos). Por defecto muestra el último día con gestiones cargadas.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="cd-unidad-negocio">
-            <option value="">Todas</option>
-            <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-            <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-            <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-            <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-            <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-          </select>
-          <span class="etiqueta-actualizado">Día</span>
-          <button type="button" id="cd-anterior" class="btn-secundario">&larr;</button>
-          <input type="date" id="cd-fecha">
-          <button type="button" id="cd-siguiente" class="btn-secundario">&rarr;</button>
-          <button type="button" id="cd-ultimo" class="btn-secundario">Último día cargado</button>
-          <button type="button" id="cd-descargar" class="btn-secundario">Descargar</button>
-        </div>
-        <div class="tarjetas-kpi" id="cd-kpis"></div>
-        <details class="tabla-contenedor desplegable" open>
-          <summary id="cd-titulo">Detalle por agente</summary>
-          <table id="tabla-cierre-diario">
-            <thead><tr>
-              <th>Agente</th><th>Empresa</th><th class="numero">Gestiones</th><th class="numero">DNI trabajados</th>
-              <th class="numero">Contacto directo</th><th class="numero">Contacto indirecto</th><th class="numero">Sin contacto</th>
-              <th class="numero">% Efectividad</th><th class="numero">Pagos</th><th class="numero">Recupero atribuido</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-        <p id="cd-nota" class="ayuda"></p>
-      </section>
-
-      <!-- ---------- VISTA: RECUPERO DIARIO (casos cobrados) ---------- -->
-      <section id="vista-recupero-diario" class="vista oculto">
-        <h2>Recupero diario — casos cobrados</h2>
-        <p class="ayuda">Compara mes contra mes los casos cobrados (DNI distintos con pago) y el monto recaudado, hasta el día que elijas. Por ejemplo, con "Día 8" y "Acumulado" ves lo cobrado del 1 al 8 de cada mes. Solo hay datos de los meses con pagos cargados.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="rd-unidad-negocio">
-            <option value="">Todas</option>
-            <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-            <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-            <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-            <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-            <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-          </select>
-          <span class="etiqueta-actualizado">Comparar día</span>
-          <select id="rd-dia"></select>
-          <span class="etiqueta-actualizado">Meses</span>
-          <select id="rd-meses">
-            <option value="3">Últimos 3 meses</option>
-            <option value="6" selected>Últimos 6 meses</option>
-            <option value="12">Últimos 12 meses</option>
-          </select>
-          <span class="etiqueta-actualizado">Modo</span>
-          <select id="rd-modo">
-            <option value="acumulado" selected>Acumulado (del 1 al día elegido)</option>
-            <option value="dia">Solo el día elegido</option>
-          </select>
-        </div>
         <details class="tarjeta-grafico ancho-completo desplegable" open>
-          <summary id="rd-titulo">Casos cobrados y monto</summary>
-          <canvas id="grafico-recupero-diario"></canvas>
-        </details>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle</summary>
-          <table id="tabla-recupero-diario">
-            <thead><tr><th>Mes</th><th>Período</th><th class="numero">Casos cobrados</th><th class="numero">Monto</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: PROMESAS VIGENTES ---------- -->
-      <section id="vista-promesas-vigentes" class="vista oculto">
-        <h2>Promesas Vigentes</h2>
-        <p class="ayuda">Promesas de pago registradas por los agentes que todavía no vencieron y que aún no muestran un pago en Recupero. Elegí una unidad para verlas.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="pv-unidad-negocio"><option value="" disabled selected>Elegí una unidad</option></select>
-          <button type="button" id="btn-descargar-pv" class="btn-secundario">Descargar casos</button>
-        </div>
-        <div class="tarjetas-kpi" id="pv-kpis"></div>
-        <div class="grilla-graficos">
-          <details class="tarjeta-grafico desplegable" open>
-            <summary>Promesas vigentes por agente</summary>
-            <canvas id="grafico-pv"></canvas>
-          </details>
-        </div>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle</summary>
-          <table id="tabla-pv">
-            <thead><tr><th>DNI</th><th>Nombre</th><th>Agente</th><th>Empresa</th><th class="numero">Monto</th><th>Fecha Promesa</th><th>Vencimiento</th><th>Teléfono</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: CONVENIOS ---------- -->
-      <section id="vista-convenios" class="vista oculto">
-        <h2>Convenios</h2>
-        <p class="ayuda">Gestiones cuyas observaciones mencionan un convenio o plan de pagos (detectado por texto — puede tener falsos positivos/negativos, revisá el detalle).</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="conv-unidad-negocio"><option value="" disabled selected>Elegí una unidad</option></select>
-          <button type="button" id="btn-descargar-conv" class="btn-secundario">Descargar casos</button>
-        </div>
-        <div class="tarjetas-kpi" id="conv-kpis"></div>
-        <div class="grilla-graficos">
-          <details class="tarjeta-grafico desplegable" open>
-            <summary>Convenios detectados por agente</summary>
-            <canvas id="grafico-conv"></canvas>
-          </details>
-        </div>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle</summary>
-          <table id="tabla-conv">
-            <thead><tr><th>DNI</th><th>Nombre</th><th>Agente</th><th>Fecha</th><th>Frase detectada</th><th>Observaciones</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: NO CONTACTADOS ---------- -->
-      <section id="vista-no-contactados" class="vista oculto">
-        <h2>No Contactados</h2>
-        <p class="ayuda">Casos con intentos de gestión en el período, pero donde ninguno logró contacto (todos "Sin Contacto") — candidatos a enriquecer datos de contacto.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="nc-unidad-negocio"><option value="" disabled selected>Elegí una unidad</option></select>
-          <button type="button" id="btn-descargar-nc" class="btn-secundario">Descargar para enriquecer</button>
-        </div>
-        <div class="tarjetas-kpi" id="nc-kpis"></div>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle</summary>
-          <table id="tabla-nc">
-            <thead><tr><th>DNI</th><th>Nombre</th><th class="numero">Deuda</th><th>Box</th><th>Provincia</th><th class="numero">Intentos</th><th>Último intento</th><th>Último teléfono</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: SIN GESTION ---------- -->
-      <section id="vista-sin-gestion" class="vista oculto">
-        <h2>Sin Gestión</h2>
-        <p class="ayuda">Casos de la Cartera Asignada que no recibieron ninguna gestión ni envío masivo en el período — nunca se tocaron.</p>
-        <div class="fila-titulo-selector">
-          <span class="etiqueta-actualizado">Unidad de negocio</span>
-          <select id="sg-unidad-negocio"><option value="" disabled selected>Elegí una unidad</option></select>
-          <button type="button" id="btn-descargar-sg" class="btn-secundario">Descargar casos</button>
-        </div>
-        <div class="tarjetas-kpi" id="sg-kpis"></div>
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Detalle (primeras 500 filas — descargá para ver todo)</summary>
-          <table id="tabla-sg">
-            <thead><tr><th>DNI</th><th>Nombre</th><th class="numero">Deuda</th><th>Box</th><th>Provincia</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </details>
-      </section>
-
-      <!-- ---------- VISTA: CARGAR MASIVOS ---------- -->
-      <section id="vista-cargar-masivos" class="vista oculto">
-        <h2>Cargar Envíos Masivos</h2>
-        <p class="ayuda">Subí el archivo de envíos masivos (mail o SMS) de una unidad — columnas de DNI, Nombre y Ficha/Crédito. Esto se usa para medir si se tocó toda la cartera al menos una vez (gestión o envío masivo), no cuenta como contacto directo.</p>
-        <form id="form-cargar-masivos" class="tarjeta-carga">
-          <label class="campo-archivo">
-            Unidad de negocio
-            <select id="masivos-unidad-negocio" required>
-              <option value="" disabled selected>Elegí una unidad</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <label class="campo-archivo">
-            Canal
-            <select id="masivos-canal" required>
-              <option value="EMAIL">Email</option>
-              <option value="SMS">SMS</option>
-            </select>
-          </label>
-          <label class="campo-archivo">Archivo (DNI, Nombre, Ficha) <input type="file" id="archivo-masivos" accept=".xlsx,.csv" required></label>
-          <button type="submit" id="btn-cargar-masivos">Cargar</button>
-          <p id="masivos-estado" class="mensaje-estado"></p>
-        </form>
-        <div class="tabla-contenedor">
-          <h3>Historial de cargas</h3>
-          <table id="tabla-log-masivos">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ---------- VISTA: CONFIGURACION DE AGENTES ---------- -->
-      <section id="vista-configuracion" class="vista oculto">
-        <h2>Configuración de Agentes</h2>
-        <p class="ayuda">Alta y baja de agentes por box y unidad de negocio. Un agente dado de baja deja de contar para nuevas asignaciones de cartera y de gestiones, pero conserva su historial ya cargado.</p>
-
-        <form id="form-alta-usuario" class="tarjeta-carga">
-          <h3 style="margin:0;">Agregar usuario (login a la página)</h3>
-          <label class="campo-archivo">Email <input type="email" id="alta-usuario-email" required></label>
-          <label class="campo-archivo">Contraseña provisoria <input type="text" id="alta-usuario-password" required minlength="6"></label>
-          <label class="campo-archivo">
-            Restringir a una unidad (opcional)
-            <select id="alta-usuario-unidad">
-              <option value="" selected>Administrador (ve todas las unidades)</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <button type="submit" id="btn-alta-usuario">Crear usuario</button>
-          <p id="alta-usuario-estado" class="mensaje-estado"></p>
-        </form>
-
-        <form id="form-alta-agente" class="tarjeta-carga">
-          <h3 style="margin:0;">Agregar agente</h3>
-          <label class="campo-archivo">
-            Unidad de negocio
-            <select id="alta-unidad-negocio" required>
-              <option value="" disabled selected>Elegí una unidad</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
-            </select>
-          </label>
-          <label class="campo-archivo">Box (ej: BOX 12) <input type="text" id="alta-box" required></label>
-          <label class="campo-archivo">Nombre del agente <input type="text" id="alta-agente" required></label>
-          <label class="campo-archivo">Horas semanales <input type="number" id="alta-horas" min="1" max="60" required></label>
-          <button type="submit" id="btn-alta-agente">Agregar</button>
-          <p id="alta-agente-estado" class="mensaje-estado"></p>
-        </form>
-
-        <details class="tabla-contenedor desplegable" open>
-          <summary>Agentes cargados</summary>
+          <summary id="titulo-grafico-seguimiento-todas">Seguimiento — TODAS (Nacional)</summary>
           <div class="fila-titulo-selector">
-            <span class="etiqueta-actualizado">Filtrar por unidad</span>
-            <select id="config-unidad-negocio">
-              <option value="">Todas</option>
-              <option value="ON CITY JUDICIAL">ON CITY JUDICIAL</option>
-              <option value="CFN JUDICIAL">CFN JUDICIAL</option>
-              <option value="ON CITY TERCERIZADO">ON CITY TERCERIZADO</option>
-              <option value="CFN TERCERIZADO">CFN TERCERIZADO</option>
-              <option value="GERENCIAR RECUPERA">GERENCIAR RECUPERA</option>
+            
+            <select id="selector-dia-todas" class="selector-dia-mes" data-objetivo="todas">
+              <option value="">Todos los días</option>
+            </select>
+            <select class="selector-rango" data-objetivo="todas">
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
+            </select>
+            <div class="selector-granularidad" data-objetivo="todas">
+              <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+              <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+            </div>
+          </div>
+          <div class="grafico-scroll-x" id="scroll-grafico-seguimiento-nacional-todas">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-seguimiento-nacional-todas"></canvas>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Cédulas De Sentencia / Liquidaciones / Embargos — Total (Nacional)</summary>
+          <canvas id="grafico-pasos-nacional-total"></canvas>
+        </details>
+      </div>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Por Estudio</summary>
+        
+        <table id="tabla-base-gral">
+          <thead>
+            <tr>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>Recupero promedio últ. semestre</th><th>En gestión</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </details>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico desplegable" open>
+          <summary>Recupero Del Último Mes Cerrado, Por Estudio</summary>
+          <div class="fila-titulo-selector">
+            
+            <div class="controles-grafico">
+              <select id="torta-estudios-modo">
+                <option value="estudio">Por estudio</option>
+                <option value="empresa">Por empresa</option>
+              </select>
+              <div class="checkboxes-series" id="torta-estudios-tipos">
+                <label><input type="checkbox" value="combinado" checked> Total</label>
+                <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
+                <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
+              </div>
+            </div>
+          </div>
+          <canvas id="grafico-barras-estudios"></canvas>
+        </details>
+        <details class="tarjeta-grafico desplegable" open>
+          <summary>Judicial Vs. Extrajudicial (Últ. Mes)</summary>
+          
+          <canvas id="grafico-torta-jud-extra"></canvas>
+        </details>
+      </div>
+
+      <div class="pie-vista-resumen">
+        <span class="etiqueta-actualizado" id="resumen-actualizado"></span>
+        <button id="btn-exportar-pdf" class="btn-secundario">Descargar informe completo (PDF)</button>
+      </div>
+    </section>
+
+    <!-- ---------- VISTA: POR ESTUDIO ---------- -->
+    <section id="vista-estudio" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Detalle por estudio</h2>
+        <select id="selector-estudio"></select>
+      </div>
+
+      <div class="fila-titulo-selector">
+        <span class="etiqueta-actualizado">Indicadores</span>
+        <select id="selector-compania-estudio">
+          <option value="GENERAL">General (todas)</option>
+          <option value="CFN">CFN</option>
+          <option value="EM">Electrónica Megatone</option>
+          <option value="CONFINA">Confina</option>
+        </select>
+      </div>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-estudio"></div>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-estudio-recupero">Recupero Mensual — Total / Judicial / Extrajudicial</summary>
+          
+          <canvas id="grafico-estudio-recupero"></canvas>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-pasos-estudio">Cédulas De Sentencia / Liquidaciones / Embargos — Total (Empresa)</summary>
+          
+          <canvas id="grafico-pasos-estudio-total"></canvas>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-caducidad-estudio">Riesgo De Caducidad — Causas En Gestión Según Su Último Paso Procesal</summary>
+          <p class="ayuda" id="nota-caducidad-estudio"></p>
+          <canvas id="grafico-caducidad-estudio"></canvas>
+          <div class="fila-botones-caducidad" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.8rem;align-items:center">
+            <button type="button" class="btn-secundario" data-caducidad="al_dia">Descargar al día (Excel)</button>
+            <button type="button" class="btn-secundario" data-caducidad="por_vencer">Descargar por vencer (Excel)</button>
+            <button type="button" class="btn-secundario" data-caducidad="sin_movimiento">Descargar sin paso en 6 meses (Excel)</button>
+            <span id="estado-descarga-caducidad" class="etiqueta-actualizado"></span>
+          </div>
+        </details>
+      </div>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Empresa</summary>
+        
+        <table id="tabla-estudio-por-empresa">
+          <thead>
+            <tr>
+              <th>Compañía</th>
+              <th style="text-align:right">Recupero últ. mes</th><th style="text-align:right">En gestión</th>
+              <th style="text-align:right">Iniciadas</th><th style="text-align:right">Con embargo haberes</th><th style="text-align:right">Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+
+    <!-- ---------- VISTA: RECUPERO DIARIO ---------- -->
+    <section id="vista-recuperodiario" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Recupero Diario</h2>
+      </div>
+      <p class="ayuda">Seguimiento del Recupero cargado día a día — la carga del archivo se hace desde "Carga Mensual".</p>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Recupero Diario — Detallado</summary>
+          <div class="fila-titulo-selector">
+            
+            <div class="controles-grafico">
+              <label class="selector-dia">Compañía
+                <select id="rd-detalle-compania">
+                  <option value="TODAS">TODAS</option>
+                  <option value="CFN">CFN</option>
+                  <option value="EM">Electrónica Megatone</option>
+                  <option value="CONFINA">Confina</option>
+                </select>
+              </label>
+              <select class="selector-rango" data-objetivo="rd-detalle">
+                <option value="6" selected>Últimos 6 meses</option>
+                <option value="12">Último año</option>
+              </select>
+              <div class="checkboxes-series" id="rd-detalle-series">
+                <label><input type="checkbox" value="total" checked> Total</label>
+                <label><input type="checkbox" value="judicial" checked> Judicial</label>
+                <label><input type="checkbox" value="extrajudicial" checked> Extrajudicial</label>
+              </div>
+              <label class="selector-dia">Comparar día
+                <select id="rd-detalle-dia" class="selector-dia-mes">
+                  <option value="">Todos los días</option>
+                </select>
+              </label>
+              <div class="selector-granularidad" data-objetivo="rd-detalle">
+                <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+                <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+              </div>
+            </div>
+          </div>
+          <div class="grafico-scroll-x" id="scroll-grafico-rd-detalle">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-rd-detalle"></canvas>
+            </div>
+          </div>
+        </details>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-rd-nacional">Seguimiento Del Recupero — Nacional</summary>
+          <div class="fila-titulo-selector">
+            
+            <div class="controles-grafico">
+              <select id="rd-nacional-estudio">
+                <option value="">Todos (nacional)</option>
+              </select>
+              <select class="selector-rango" data-objetivo="rd-nacional">
+                <option value="6" selected>Últimos 6 meses</option>
+                <option value="12">Último año</option>
+              </select>
+              <label class="selector-dia">Comparar día
+                <select id="rd-nacional-dia" class="selector-dia-mes">
+                  <option value="">Todos los días</option>
+                </select>
+              </label>
+              <div class="selector-granularidad" data-objetivo="rd-nacional">
+                <button class="chip-granularidad activa" data-granularidad="diario">Diario</button>
+                <button class="chip-granularidad" data-granularidad="semanal">Semanal</button>
+              </div>
+            </div>
+          </div>
+          <div class="grafico-scroll-x" id="scroll-grafico-rd-nacional">
+            <div class="grafico-scroll-x-interior">
+              <canvas id="grafico-rd-nacional"></canvas>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary id="titulo-rd-acumulado">Recaudación Acumulada Del Mes — Comparativo (Del 1 Al Día De Hoy, Mes Actual Primero)</summary>
+        <div class="fila-titulo-selector">
+          
+          <div class="controles-grafico">
+            <div class="checkboxes-series" id="rd-acumulado-series">
+              <label><input type="checkbox" value="total" checked> Total</label>
+              <label><input type="checkbox" value="CFN" checked> CFN</label>
+              <label><input type="checkbox" value="EM" checked> Electrónica Megatone</label>
+              <label><input type="checkbox" value="CONFINA" checked> Confina</label>
+            </div>
+            <div class="checkboxes-series" id="rd-acumulado-tipos">
+              <label><input type="checkbox" value="combinado" checked> Total (jud.+extra.)</label>
+              <label><input type="checkbox" value="JUDICIAL"> Judicial</label>
+              <label><input type="checkbox" value="EXTRAJUDICIAL"> Extrajudicial</label>
+            </div>
+            <label class="selector-dia"><input type="checkbox" id="rd-acumulado-fichas"> Mostrar cantidad de fichas</label>
+            <select id="selector-dia-rd-acumulado" class="selector-dia-mes">
+              <option value="">Hasta hoy</option>
+            </select>
+            <select class="selector-rango" data-objetivo="rd-acumulado">
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Último año</option>
             </select>
           </div>
-          <div class="fila-titulo-selector">
-            <button type="button" id="btn-reasignar-vacios" class="btn-secundario">Reasignar cartera de boxes sin agentes</button>
-            <span id="reasignar-vacios-estado" class="mensaje-estado"></span>
-          </div>
-          <p class="ayuda">Elegí una unidad en el filtro. La cartera de los boxes que quedaron sin agentes activos se reparte entre los boxes que sí tienen agentes, según sus horas. Un DNI queda siempre en un solo box. Antes de aplicar se muestra un resumen para confirmar.</p>
-          <table id="tabla-agentes-config">
-            <thead><tr><th>Unidad</th><th>Box</th><th>Agente</th><th class="numero">Horas</th><th>Estado</th><th>Acción</th></tr></thead>
-            <tbody></tbody>
-          </table>
+        </div>
+        <table id="tabla-rd-acumulado" class="tabla-compacta">
+          <thead><tr id="rd-acumulado-encabezado"></tr></thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+
+    <!-- ---------- VISTA: POR EMPRESA ---------- -->
+    <section id="vista-empresa" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Detalle por empresa</h2>
+        <select id="selector-empresa">
+          <option value="CFN">CFN</option>
+          <option value="EM">Electrónica Megatone</option>
+          <option value="CONFINA">Confina</option>
+        </select>
+      </div>
+
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="kpis-empresa"></div>
+
+      <div class="grilla-graficos">
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary>Recupero Mensual — Total / Judicial / Extrajudicial</summary>
+          
+          <canvas id="grafico-empresa-recupero"></canvas>
         </details>
-      </section>
-    </main>
+        <details class="tarjeta-grafico ancho-completo desplegable" open>
+          <summary id="titulo-grafico-pasos-empresa">Cédulas De Sentencia / Liquidaciones / Embargos — CFN</summary>
+          
+          <canvas id="grafico-pasos-empresa"></canvas>
+        </details>
+      </div>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Detalle Por Estudio</summary>
+        
+        <table id="tabla-empresa-por-estudio">
+          <thead>
+            <tr>
+              <th>Estudio</th><th>Recupero últ. mes</th><th>En gestión</th>
+              <th>Iniciadas</th><th>Con embargo haberes</th><th>Contraparte</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+
+    <!-- ---------- VISTA: CARGA COMPLETA ---------- -->
+    <section id="vista-cargar" class="vista oculto">
+      <h2>Carga completa (reprocesa todo desde cero)</h2>
+      <p class="ayuda">Subí los 5 archivos completos de siempre. El sistema aplica las mismas reglas ya validadas (fechas, códigos de abogado, cruces por juzgado) y recalcula todo desde octubre/2023. Usá esto solo si necesitás reprocesar el historial completo — para la carga de todos los meses, usá "Carga Mensual".</p>
+      <p class="ayuda"><strong>Cartera pesada (100MB+):</strong> abrila en Excel y hacé <em>Archivo &gt; Guardar como &gt; CSV UTF-8 (delimitado por comas)</em> antes de subirla acá — se procesa mucho más rápido y con menos problemas que el .xlsx original.</p>
+
+      <form id="form-carga" class="tarjeta-carga">
+        <label class="campo-archivo">Cartera.xlsx (o .csv — recomendado para archivos grandes, ver nota abajo) <input type="file" id="archivo-cartera" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Recupero.xlsx (todas las hojas) <input type="file" id="archivo-recupero" accept=".xlsx" required></label>
+        <label class="campo-archivo">Juzgado.xlsx <input type="file" id="archivo-juzgados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx <input type="file" id="archivo-abogados" accept=".xlsx" required></label>
+        <label class="campo-archivo">Pasos Procesales.xlsx <input type="file" id="archivo-pasos" accept=".xlsx" required></label>
+
+        <button type="submit" id="btn-cargar">Procesar y guardar</button>
+        <p id="carga-estado" class="mensaje-estado"></p>
+      </form>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Historial De Cargas</summary>
+        
+        <table id="tabla-log">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+
+    <!-- ---------- VISTA: CARGA MENSUAL (INCREMENTAL) ---------- -->
+    <section id="vista-incremental" class="vista oculto">
+      <h2>Carga mensual (altas, bajas y el mes nuevo)</h2>
+      <p class="ayuda">Todos los meses: subí las causas nuevas (altas), las canceladas (bajas), y solo la hoja del mes de Recupero y de Pasos Procesales — no hace falta rearmar el historial completo.</p>
+      <p class="ayuda"><strong>Juzgado y Abogados son opcionales</strong>: si no los subís, el sistema usa la última versión guardada. Solo hace falta subirlos de nuevo si cambió algo — por ejemplo, si vas a empezar a operar en una sucursal nueva (el sistema la da de alta sola apenas aparece en el archivo de Abogados).</p>
+
+      <form id="form-incremental" class="tarjeta-carga">
+        <label class="campo-archivo">Mes que estás cargando
+          <input type="date" id="incremental-mes" required>
+        </label>
+        <label class="campo-archivo">Altas del mes (causas nuevas) <input type="file" id="incremental-altas" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Bajas del mes (ej. bajasmes.xlsx — causas canceladas) <input type="file" id="incremental-bajas" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Recupero del mes (una sola hoja) <input type="file" id="incremental-recupero" accept=".xlsx,.csv" required></label>
+        <label class="campo-archivo">Pasos Procesales del mes <input type="file" id="incremental-pasos" accept=".xlsx" required></label>
+        <label class="campo-archivo">Juzgado.xlsx (opcional — solo si cambió algo, o si vas a agregar una sucursal nueva) <input type="file" id="incremental-juzgados" accept=".xlsx"></label>
+        <label class="campo-archivo">Abogados_Encargado_por_juzgados.xlsx (opcional — solo si cambió algo, o si vas a agregar una sucursal nueva) <input type="file" id="incremental-abogados" accept=".xlsx"></label>
+
+        <button type="submit" id="btn-incremental">Procesar y guardar</button>
+        <p id="incremental-estado" class="mensaje-estado"></p>
+      </form>
+
+      <details class="tarjeta-carga desplegable" open>
+        <summary>Cargar Recupero Del Día (Recupero Diario)</summary>
+        <p class="ayuda">Para ir cargando el Recupero día a día sin tocar el resto de la Matriz — solo actualiza los gráficos de "Recupero Diario". Al cerrar el mes, se sigue usando la carga de arriba (con altas/bajas/Pasos) para actualizar todo lo demás.</p>
+        <form id="form-recupero-diario" class="tarjeta-carga">
+          <label class="campo-archivo">Recupero del día (o acumulado del mes hasta hoy) <input type="file" id="rd-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-recupero-diario">Cargar Recupero del día</button>
+          <p id="rd-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Cancelados (Bajas)</summary>
+        <p class="ayuda">Subí un archivo con la columna "Ficha" — da de baja esas causas (mismo efecto que una baja en la carga mensual normal), sin tener que pasar por el formulario completo. Las fichas ya inactivas no se tocan de nuevo.</p>
+        <form id="form-backfill-cancelados" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha <input type="file" id="backfill-cancelados-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-cancelados">Cargar Cancelados</button>
+          <p id="backfill-cancelados-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Último Paso Procesal (Archivos De Pasos)</summary>
+        <p class="ayuda">Subí uno o varios archivos de Pasos Procesales (por ejemplo, los últimos 6 meses a la vez). Guarda para cada causa la fecha y el tipo de su paso más reciente, que sirve para ver los días sin movimiento y el riesgo de caducidad. No modifica los conteos mensuales de pasos. Se puede subir en cualquier orden y repetir sin problema; cada mes nuevo que se cargue en la carga mensual lo actualiza solo.</p>
+        <form id="form-ultimo-paso" class="tarjeta-carga">
+          <label class="campo-archivo">Archivos de Pasos Procesales <input type="file" id="ultimo-paso-archivos" accept=".xlsx" multiple required></label>
+          <button type="submit" id="btn-ultimo-paso">Cargar Último Paso</button>
+          <p id="ultimo-paso-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Corregir Estudio Por Ficha (Reportes De Casos Puntuales)</summary>
+        <p class="ayuda">Uso puntual: subí un archivo con las columnas "Ficha" y "Sucursal" (o "Estudio") — actualiza el estudio SOLO de las fichas activas que vengan en el archivo, pisando lo calculado automáticamente por abogado/juzgado. Las fichas dadas de baja no se tocan. Útil para casos como abogados que manejan causas de varias sucursales.</p>
+        <form id="form-backfill-estudio" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha + Sucursal <input type="file" id="backfill-estudio-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-estudio">Corregir Estudio</button>
+          <p id="backfill-estudio-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Actualizar Solo La Compañía (Una Vez, Si "Por Empresa" Está En Cero)</summary>
+        <p class="ayuda">Uso puntual: subí cualquier extracto de Cartera que tenga las columnas "Ficha" y "Compania" (puede ser tu Cartera completa actual) — actualiza SOLO ese dato en las causas que ya tenés cargadas, sin reprocesar nada más. No hace falta usarlo todos los meses.</p>
+        <form id="form-backfill-compania" class="tarjeta-carga">
+          <label class="campo-archivo">Archivo con Ficha + Compania <input type="file" id="backfill-archivo" accept=".xlsx,.csv" required></label>
+          <button type="submit" id="btn-backfill-compania">Actualizar Compañía</button>
+          <p id="backfill-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tarjeta-carga desplegable">
+        <summary>Cargar Pasos Procesales De Un Mes Anterior</summary>
+        <p class="ayuda">Para ir completando meses pasados de a uno, sin subir altas/bajas/Recupero de ese mismo mes — usa la referencia de Juzgado/Abogados ya guardada.</p>
+        <form id="form-pasos-historico" class="tarjeta-carga">
+          <label class="campo-archivo">Mes al que corresponden estos Pasos Procesales
+            <input type="date" id="pasos-historico-mes" required>
+          </label>
+          <label class="campo-archivo">Pasos Procesales de ese mes <input type="file" id="pasos-historico-archivo" accept=".xlsx" required></label>
+          <button type="submit" id="btn-pasos-historico">Cargar Pasos Procesales de ese mes</button>
+          <p id="pasos-historico-estado" class="mensaje-estado"></p>
+        </form>
+      </details>
+
+      <details class="tabla-contenedor desplegable" open>
+          <summary>Historial De Cargas</summary>
+        
+        <table id="tabla-log-incremental">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Detalle</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+  </main>
   </div>
 </div>
 
