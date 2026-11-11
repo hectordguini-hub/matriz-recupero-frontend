@@ -82,6 +82,7 @@
       <button class="pestana" data-vista="empresa">Por Empresa</button>
       <button class="pestana" data-vista="estudio">Por Estudio</button>
       <button class="pestana" data-vista="recuperodiario">Recupero Diario</button>
+      <button class="pestana" data-vista="informe">Informe de Recupero</button>
       <button class="pestana" data-vista="cargar">Carga Completa</button>
       <button class="pestana" data-vista="incremental">Carga Mensual</button>
     </nav>
@@ -207,6 +208,22 @@
     </section>
 
     <!-- ---------- VISTA: POR ESTUDIO ---------- -->
+    <!-- ---------- VISTA: INFORME DE RECUPERO ---------- -->
+    <section id="vista-informe" class="vista oculto">
+      <div class="fila-encabezado-vista">
+        <h2>Informe de Recupero</h2>
+        <select id="informe-rango" class="selector-dia-mes">
+          <option value="12">Últimos 12 meses</option>
+          <option value="24" selected>Últimos 24 meses</option>
+          <option value="60">Todo el histórico</option>
+        </select>
+        <label class="ayuda"><input type="checkbox" id="informe-mes-curso"> Incluir mes en curso</label>
+      </div>
+      <p class="ayuda">Recupero mensual por compañía, con embargo SÍ (judicial) y NO (extrajudicial) y cartera tercerizada. Barras: $ y Q de fichas; línea: relación contra el primer mes con dato. Los valores salen de los archivos de pagos cargados en la Matriz y pueden diferir ~0,5% del informe manual de Gerencia.</p>
+      <div class="tarjetas-kpi tarjetas-kpi-compactas" id="informe-kpis"></div>
+      <div class="grilla-graficos" id="informe-grilla"><p class="ayuda">Cargando…</p></div>
+    </section>
+
     <section id="vista-estudio" class="vista oculto">
       <div class="fila-encabezado-vista">
         <h2>Detalle por estudio</h2>
@@ -542,5 +559,6 @@
 
 <script src="config.js"></script>
 <script src="app.js"></script>
+<script src="informe.js"></script>
 </body>
 </html>

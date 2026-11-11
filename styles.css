@@ -312,3 +312,10 @@ td.numero, th.numero { font-family: 'IBM Plex Mono', monospace; text-align: righ
   .encabezado { flex-wrap: wrap; gap: 0.6rem; }
   .pestanas { order: 3; width: 100%; justify-content: space-between; }
 }
+
+/* Informe de Recupero */
+.informe-par { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.informe-caja { position: relative; height: 280px; }
+.informe-caja h4 { margin: 0 0 6px; font-size: 13px; color: #5a5a52; font-weight: 600; }
+.informe-caja canvas { max-height: 250px; }
+@media (max-width: 800px) { .informe-par { grid-template-columns: 1fr; } }
