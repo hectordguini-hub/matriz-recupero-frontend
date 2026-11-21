@@ -41,7 +41,7 @@ const COLOR_CFN = '#ca0130';       // bronce/rojo
 const COLOR_EM = '#25404a';        // navy
 const COLOR_CONFINA = '#3f6b4f';   // verde
 
-const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+const formateadorMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formateadorNumero = new Intl.NumberFormat('es-AR');
 
 let graficos = {}; // referencias a instancias de Chart.js, para poder destruir/redibujar
